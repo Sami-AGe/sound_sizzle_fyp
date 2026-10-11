@@ -1,0 +1,1860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>AudioStory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #080812;
+      --surface:     #0d0d1c;
+      --raised:      #131328;
+      --hover:       #1a1a38;
+      --border:      #1e1e3a;
+      --border2:     #262650;
+      --accent:      #7c6cfa;
+      --accent-h:    #5b4ce0;
+      --accent-dim:  rgba(124,108,250,0.10);
+      --accent-glow: rgba(124,108,250,0.30);
+      --green:       #36d88e;
+      --orange:      #f0a24a;
+      --red:         #f2647a;
+      --text:        #e8e8f6;
+      --text2:       #8080a8;
+      --text3:       #44445e;
+      --r:           8px;
+      --mono:        'JetBrains Mono', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Space Grotesk', -apple-system, sans-serif;
+      font-size: 15px;
+      line-height: 1.55;
+      min-height: 100vh;
+      padding: 2rem 1.5rem 5rem;
+    }
+
+    .container { max-width: 860px; margin: 0 auto; }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 2.75rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo { font-size: 1.35rem; font-weight: 600; letter-spacing: -0.02em; }
+    .logo-mark { color: var(--accent); margin-right: 0.3rem; }
+    .tagline { color: var(--text2); font-size: 0.82rem; margin-top: 0.2rem; }
+
+    .backend-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 0.35rem 0.85rem;
+      font-size: 0.78rem;
+      color: var(--text2);
+      white-space: nowrap;
+      margin-top: 0.15rem;
+    }
+
+    .sdot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--text3); flex-shrink: 0;
+    }
+    .sdot.online  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .sdot.offline { background: var(--red); }
+
+    /* ── Steps ── */
+    .step { margin-bottom: 2rem; }
+
+    .step-head {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .step-num {
+      font-size: 0.65rem;
+      font-weight: 600;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      padding: 0.1rem 0.35rem;
+      font-family: var(--mono);
+      background: var(--accent-dim);
+      letter-spacing: 0.04em;
+    }
+
+    .step-head h2 { font-size: 0.98rem; font-weight: 600; }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 1.25rem;
+    }
+
+    /* ── Upload zone ── */
+    .upload-zone {
+      border: 2px dashed var(--border2);
+      border-radius: var(--r);
+      padding: 2.25rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.18s, background 0.18s;
+      color: var(--text2);
+    }
+
+    .upload-zone:hover { border-color: var(--accent); background: var(--accent-dim); }
+    .upload-zone.has-file { border-color: var(--green); border-style: solid; background: rgba(54,216,142,0.04); }
+    .upload-zone.dragover { border-color: var(--accent); background: var(--accent-dim); }
+
+    .upload-icon { font-size: 2rem; display: block; margin-bottom: 0.5rem; }
+    #uploadText { font-size: 0.9rem; }
+    .upload-hint { font-size: 0.75rem; color: var(--text3); margin-top: 0.3rem; }
+    #fileInfo { margin-top: 0.55rem; font-size: 0.82rem; font-weight: 500; }
+    #fileInfo.ok   { color: var(--green); }
+    #fileInfo.warn { color: var(--orange); }
+
+    input[type="file"] { display: none; }
+
+    /* ── Audio Slicer ── */
+    .slicer-panel {
+      margin-top: 1rem;
+      background: var(--raised);
+      border: 1px solid var(--border2);
+      border-radius: var(--r);
+      padding: 1rem;
+    }
+
+    .slicer-label {
+      font-size: 0.78rem;
+      color: var(--orange);
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-weight: 500;
+    }
+
+    .wave-wrap {
+      position: relative;
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--bg);
+      border: 1px solid var(--border);
+    }
+
+    #waveCanvas {
+      width: 100%;
+      height: 72px;
+      display: block;
+      cursor: grab;
+      touch-action: none;
+    }
+
+    #waveCanvas:active { cursor: grabbing; }
+
+    .slicer-time-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 0.55rem;
+      font-size: 0.75rem;
+      color: var(--text2);
+      font-family: var(--mono);
+    }
+
+    .slicer-time-row .sel-badge {
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      border-radius: 4px;
+      padding: 0.1rem 0.5rem;
+      font-size: 0.7rem;
+    }
+
+    /* ── Style grid ── */
+    .styles-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
+      gap: 0.55rem;
+    }
+
+    .style-btn {
+      background: var(--raised);
+      border: 1.5px solid var(--border);
+      border-radius: var(--r);
+      padding: 0.8rem 0.55rem;
+      cursor: pointer;
+      text-align: center;
+      transition: border-color 0.15s, background 0.15s;
+      color: var(--text);
+      font-family: inherit;
+    }
+
+    .style-btn:hover { border-color: var(--border2); background: var(--hover); }
+    .style-btn.selected { border-color: var(--accent); background: var(--accent-dim); }
+    .style-btn .sname { font-weight: 600; font-size: 0.8rem; display: block; }
+    .style-btn .sdesc { font-size: 0.67rem; color: var(--text2); margin-top: 0.2rem; line-height: 1.3; display: block; }
+
+    /* ── Mode toggle ── */
+    .mode-toggle {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.65rem;
+      margin-bottom: 1.15rem;
+    }
+
+    .mode-opt {
+      background: var(--raised);
+      border: 1.5px solid var(--border);
+      border-radius: var(--r);
+      padding: 0.85rem 0.95rem;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .mode-opt:hover { border-color: var(--border2); }
+    .mode-opt.selected { border-color: var(--accent); background: var(--accent-dim); }
+    .mode-opt .mlabel { font-weight: 600; font-size: 0.88rem; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+    .mode-opt .mdesc  { font-size: 0.73rem; color: var(--text2); margin-top: 0.25rem; }
+
+    .badge {
+      display: inline-block;
+      padding: 0.08rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.65rem;
+      font-weight: 700;
+    }
+
+    .badge-fast    { background: var(--green); color: #000; }
+    .badge-quality { background: var(--orange); color: #000; }
+
+    /* ── ComfyUI panel ── */
+    .comfy-panel {
+      background: var(--raised);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden;
+      margin-bottom: 1.15rem;
+    }
+
+    .comfy-toggle {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.65rem 1rem;
+      background: none;
+      border: none;
+      color: var(--text2);
+      font-size: 0.8rem;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+    }
+
+    .comfy-toggle:hover { color: var(--text); background: var(--hover); }
+
+    .comfy-arrow { transition: transform 0.2s; font-style: normal; font-size: 0.7rem; }
+    .comfy-toggle.open .comfy-arrow { transform: rotate(180deg); }
+
+    .comfy-body {
+      display: none;
+      border-top: 1px solid var(--border);
+      padding: 1rem;
+    }
+
+    .comfy-body.open { display: block; }
+
+    .cf-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 0.75rem;
+    }
+
+    .cf-field label {
+      display: block;
+      font-size: 0.72rem;
+      color: var(--text2);
+      margin-bottom: 0.28rem;
+      font-weight: 500;
+    }
+
+    .cf-field input,
+    .cf-field select {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 0.42rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .cf-field input:focus,
+    .cf-field select:focus { border-color: var(--accent); }
+
+    /* ── Slider row ── */
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      margin-bottom: 1.15rem;
+    }
+
+    .slider-row label {
+      font-size: 0.8rem;
+      color: var(--text2);
+      white-space: nowrap;
+      min-width: 80px;
+    }
+
+    .slider-row input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+    }
+
+    .slider-val {
+      font-weight: 600;
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      min-width: 2.2rem;
+      text-align: right;
+    }
+
+    /* ── Action buttons ── */
+    .actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+
+    .btn {
+      padding: 0.62rem 1.1rem;
+      border: none;
+      border-radius: var(--r);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn-primary { background: var(--accent); color: #fff; flex: 1; min-width: 140px; }
+    .btn-primary:hover { background: var(--accent-h); }
+    .btn-primary:disabled { background: var(--border2); color: var(--text3); cursor: not-allowed; }
+
+    .btn-secondary { background: var(--raised); border: 1px solid var(--border2); color: var(--text2); }
+    .btn-secondary:hover { border-color: var(--text3); color: var(--text); }
+    .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-ghost { background: none; border: 1px solid var(--border); color: var(--text2); }
+    .btn-ghost:hover { border-color: var(--border2); color: var(--text); }
+
+    .btn-danger { background: rgba(242,100,122,0.12); border: 1px solid var(--red); color: var(--red); }
+    .btn-danger:hover { background: rgba(242,100,122,0.22); }
+    .btn-danger:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* ── Progress panel ── */
+    .progress-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 1.2rem;
+      margin: 1.25rem 0;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.85rem;
+    }
+
+    .progress-title {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+
+    .progress-right {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+
+    .progress-pct {
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      color: var(--accent);
+      font-weight: 600;
+      min-width: 3ch;
+    }
+
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid var(--border2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .progress-track {
+      height: 5px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 0.9rem;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), #a892ff);
+      border-radius: 3px;
+      transition: width 0.7s ease;
+      width: 0%;
+    }
+
+    .stages-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.45rem;
+    }
+
+    .stage-pill {
+      background: var(--raised);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.45rem 0.5rem;
+      text-align: center;
+      transition: all 0.25s;
+    }
+
+    .stage-pill .pname { font-size: 0.72rem; font-weight: 600; color: var(--text3); display: block; }
+    .stage-pill .psub  { font-size: 0.62rem; color: var(--text3); display: block; margin-top: 0.1rem; }
+
+    .stage-pill.active { border-color: var(--accent); background: var(--accent-dim); }
+    .stage-pill.active .pname { color: var(--text); }
+    .stage-pill.active .psub  { color: var(--accent); }
+
+    .stage-pill.done { border-color: var(--green); background: rgba(54,216,142,0.06); }
+    .stage-pill.done .pname { color: var(--green); }
+    .stage-pill.done .psub  { color: var(--green); }
+
+    /* ── Error panel ── */
+    .error-panel {
+      display: none;
+      background: rgba(242,100,122,0.07);
+      border: 1px solid var(--red);
+      border-radius: var(--r);
+      padding: 0.9rem 1rem;
+      margin: 1rem 0;
+    }
+
+    .error-panel.visible { display: block; }
+
+    .error-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: var(--red);
+      margin-bottom: 0.4rem;
+    }
+
+    .error-close { cursor: pointer; font-size: 1.1rem; line-height: 1; }
+
+    #errorMsg    { font-size: 0.85rem; color: #fca5a5; }
+    #errorDetail { font-family: var(--mono); font-size: 0.75rem; color: #fc9fa5; opacity: 0.75;
+                   white-space: pre-wrap; margin-top: 0.45rem; }
+
+    /* ── Results panel ── */
+    .results-panel { display: none; margin: 1.25rem 0; }
+    .results-panel.visible { display: block; }
+
+    .result-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.85rem;
+    }
+
+    .result-head h2 { font-size: 0.98rem; font-weight: 600; }
+
+    /* ── Video player ── */
+    .player-wrap {
+      position: relative;
+      background: #000;
+      border-radius: var(--r);
+      overflow: hidden;
+      aspect-ratio: 16 / 9;
+      margin-bottom: 1rem;
+      border: 1px solid var(--border);
+    }
+
+    .player-wrap video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    /* Big play overlay */
+    .v-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .v-overlay.hide { display: none; }
+
+    .v-play-big {
+      width: 58px; height: 58px;
+      border-radius: 50%;
+      background: rgba(124,108,250,0.82);
+      box-shadow: 0 0 32px var(--accent-glow);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem;
+      color: #fff;
+      transition: transform 0.15s, background 0.15s;
+      pointer-events: none;
+    }
+
+    .v-overlay:hover .v-play-big { transform: scale(1.1); background: rgba(91,76,224,0.9); }
+
+    /* Controls bar */
+    .v-controls {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      padding: 1.5rem 0.85rem 0.65rem;
+      background: linear-gradient(transparent, rgba(0,0,0,0.82));
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .player-wrap:hover .v-controls,
+    .player-wrap.paused .v-controls { opacity: 1; }
+
+    .v-btn {
+      background: none; border: none; color: rgba(255,255,255,0.85);
+      cursor: pointer; padding: 0; font-size: 0.9rem; flex-shrink: 0;
+      width: 26px; height: 26px;
+      display: flex; align-items: center; justify-content: center;
+      transition: color 0.12s;
+    }
+
+    .v-btn:hover { color: #fff; }
+
+    .v-time-cur, .v-time-dur {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      color: rgba(255,255,255,0.7);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .v-scrub {
+      flex: 1;
+      height: 4px;
+      background: rgba(255,255,255,0.22);
+      border-radius: 2px;
+      cursor: pointer;
+      position: relative;
+      transition: height 0.12s;
+    }
+
+    .v-scrub:hover { height: 6px; }
+
+    .v-scrub-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      pointer-events: none;
+    }
+
+    /* Loading state */
+    .player-wrap.loading::after {
+      content: 'Loading video…';
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text2);
+      font-size: 0.82rem;
+      background: #000;
+    }
+
+    /* ── Story + stats ── */
+    .story-text {
+      background: var(--raised);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 0.8rem 1rem;
+      color: var(--text2);
+      font-size: 0.83rem;
+      line-height: 1.65;
+      margin-bottom: 0.85rem;
+      font-style: italic;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.45rem;
+      margin-bottom: 1rem;
+    }
+
+    .stat {
+      background: var(--raised);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.45rem 0.7rem;
+    }
+
+    .stat .slabel { font-size: 0.65rem; color: var(--text3); display: block; margin-bottom: 0.1rem; }
+    .stat .svalue { font-size: 0.85rem; font-weight: 600; display: block; }
+
+    .result-actions {
+      display: flex;
+      gap: 0.55rem;
+      margin-bottom: 1.15rem;
+    }
+
+    /* ── Tabs ── */
+    .tabs-bar {
+      display: flex;
+      gap: 0.35rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.55rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--text2);
+      font-size: 0.78rem;
+      font-family: inherit;
+      padding: 0.28rem 0.75rem;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.12s;
+    }
+
+    .tab-btn:hover { color: var(--text); background: var(--hover); }
+    .tab-btn.active { background: var(--accent-dim); color: var(--accent); }
+
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    .json-viewer {
+      background: var(--raised);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 0.85rem 1rem;
+      font-family: var(--mono);
+      font-size: 0.73rem;
+      max-height: 380px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      color: #9ab0d8;
+      line-height: 1.6;
+    }
+
+    .jlookup { display: flex; gap: 0.5rem; margin-bottom: 0.65rem; }
+
+    .jlookup input {
+      flex: 1;
+      background: var(--raised);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 0.42rem 0.65rem;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-family: inherit;
+      outline: none;
+    }
+
+    .jlookup input:focus { border-color: var(--accent); }
+
+    /* ── Console ── */
+    .console-wrap {
+      margin-top: 1.75rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+    }
+
+    .console-toggle {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.55rem 0.85rem;
+      background: none;
+      border: none;
+      color: var(--text3);
+      font-size: 0.76rem;
+      font-family: inherit;
+      cursor: pointer;
+    }
+
+    .console-toggle:hover { color: var(--text2); }
+
+    .c-arrow { transition: transform 0.2s; }
+    .console-toggle.open .c-arrow { transform: rotate(180deg); }
+
+    .console-body {
+      display: none;
+      border-top: 1px solid var(--border);
+    }
+
+    .console-body.open { display: block; }
+
+    .console-acts {
+      display: flex;
+      justify-content: flex-end;
+      padding: 0.35rem 0.6rem;
+    }
+
+    .console-acts button {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text3);
+      font-size: 0.7rem;
+      padding: 0.12rem 0.5rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .console-acts button:hover { color: var(--text2); border-color: var(--border2); }
+
+    .console {
+      font-family: var(--mono);
+      font-size: 0.73rem;
+      max-height: 220px;
+      overflow-y: auto;
+      padding: 0.35rem 0.85rem 0.75rem;
+    }
+
+    .cline { line-height: 1.65; word-break: break-all; }
+    .cline.success { color: var(--green); }
+    .cline.error   { color: var(--red); }
+    .cline.info    { color: var(--text3); }
+    .cline.warn    { color: var(--orange); }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      body { padding: 1.25rem 1rem 4rem; }
+      .mode-toggle     { grid-template-columns: 1fr; }
+      .cf-grid         { grid-template-columns: 1fr 1fr; }
+      .stages-row      { grid-template-columns: repeat(2, 1fr); }
+      .stats-grid      { grid-template-columns: repeat(2, 1fr); }
+      .actions         { flex-direction: column; }
+      .result-actions  { flex-direction: column; }
+      header           { flex-direction: column; gap: 0.75rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .progress-fill { transition: none; }
+      .spinner { animation: none; border-top-color: var(--accent); }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <div>
+      <div class="logo"><span class="logo-mark">◈</span>AudioStory</div>
+      <div class="tagline">30 seconds of audio → beat-synced AI video</div>
+    </div>
+    <div class="backend-pill">
+      <span class="sdot" id="statusDot"></span>
+      <span id="statusText">Connecting…</span>
+    </div>
+  </header>
+
+  <!-- Step 1: Upload -->
+  <div class="step">
+    <div class="step-head">
+      <span class="step-num">01</span>
+      <h2>Upload audio</h2>
+    </div>
+    <div class="panel">
+      <div class="upload-zone" id="uploadZone"
+           ondrop="handleDrop(event)"
+           ondragover="handleDragOver(event)"
+           ondragleave="handleDragLeave(event)"
+           onclick="document.getElementById('audioInput').click()">
+        <span class="upload-icon">🎵</span>
+        <span id="uploadText">Click or drag an audio file here</span>
+        <div class="upload-hint">MP3 · WAV · M4A · OGG — if longer than 30s you can slice it below</div>
+        <div id="fileInfo"></div>
+      </div>
+      <input type="file" id="audioInput" accept=".mp3,.wav,.m4a,.ogg">
+
+      <!-- Slicer — appears only when file > 30s -->
+      <div class="slicer-panel" id="slicerPanel" style="display:none">
+        <div class="slicer-label">✂️ Drag the highlighted region to pick your 30-second window</div>
+        <div class="wave-wrap">
+          <canvas id="waveCanvas" height="72"></canvas>
+        </div>
+        <div class="slicer-time-row">
+          <span id="sliceStartLabel">0:00</span>
+          <span class="sel-badge" id="sliceSelBadge">0:00 → 0:30 selected</span>
+          <span id="sliceEndLabel">0:30</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Style -->
+  <div class="step">
+    <div class="step-head">
+      <span class="step-num">02</span>
+      <h2>Visual style</h2>
+    </div>
+    <div class="panel">
+      <div class="styles-grid" id="stylesGrid">
+        <div style="color:var(--text3);grid-column:1/-1;text-align:center;padding:1.25rem;font-size:0.82rem;">Loading styles…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Settings -->
+  <div class="step">
+    <div class="step-head">
+      <span class="step-num">03</span>
+      <h2>Generation settings</h2>
+    </div>
+    <div class="panel">
+
+      <div class="mode-toggle">
+        <div class="mode-opt" id="modeFast" onclick="setMode('fast')">
+          <div class="mlabel">Fast <span class="badge badge-fast">Cheaper</span></div>
+          <div class="mdesc">Fewer steps · text-to-image · seed-locked continuity · ComfyUI local</div>
+        </div>
+        <div class="mode-opt" id="modeQuality" onclick="setMode('quality')">
+          <div class="mlabel">Quality <span class="badge badge-quality">High fidelity</span></div>
+          <div class="mdesc">More steps · img-to-img inheritance · FLUX Kontext · ComfyUI local</div>
+        </div>
+      </div>
+
+      <!-- ComfyUI advanced settings -->
+      <div class="comfy-panel">
+        <button class="comfy-toggle" id="comfyToggle" onclick="toggleComfy()">
+          <span>⚙ ComfyUI settings — steps, resolution, guidance, seed</span>
+          <i class="comfy-arrow">▼</i>
+        </button>
+        <div class="comfy-body" id="comfyBody">
+          <div class="cf-grid" style="margin-top:0.85rem;">
+            <div class="cf-field">
+              <label for="cfSteps">Inference steps</label>
+              <input type="number" id="cfSteps" min="4" max="60" value="20">
+            </div>
+            <div class="cf-field">
+              <label for="cfGuidance">Guidance scale</label>
+              <input type="number" id="cfGuidance" min="1" max="15" step="0.5" value="7.0">
+            </div>
+            <div class="cf-field">
+              <label for="cfDenoise">Denoise strength</label>
+              <input type="number" id="cfDenoise" min="0.05" max="1.0" step="0.05" value="0.75">
+            </div>
+            <div class="cf-field">
+              <label for="cfWidth">Width (px)</label>
+              <select id="cfWidth">
+                <option value="512">512</option>
+                <option value="640">640</option>
+                <option value="768" selected>768</option>
+                <option value="1024">1024</option>
+              </select>
+            </div>
+            <div class="cf-field">
+              <label for="cfHeight">Height (px)</label>
+              <select id="cfHeight">
+                <option value="512">512</option>
+                <option value="576">576 (portrait)</option>
+                <option value="768" selected>768</option>
+                <option value="1024">1024</option>
+              </select>
+            </div>
+            <div class="cf-field">
+              <label for="cfSeed">Seed (−1 = random)</label>
+              <input type="number" id="cfSeed" min="-1" max="2147483647" value="-1">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="slider-row">
+        <label for="maxFrames">Max frames</label>
+        <input type="range" id="maxFrames" min="8" max="20" value="15" oninput="updateFrameCount()">
+        <span class="slider-val" id="frameCountVal">15</span>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" id="generateBtn" disabled onclick="generateVideo()">Generate video</button>
+        <button class="btn btn-secondary" id="testStage1Btn" disabled onclick="testStage1()">Test audio analysis</button>
+        <button class="btn btn-secondary" id="testStage2Btn" disabled onclick="testStage2()">Test storyboard</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-panel" id="progressPanel" style="display:none">
+    <div class="progress-header">
+      <div class="progress-title">
+        <span class="spinner"></span>
+        <span id="progressLabel">Starting…</span>
+      </div>
+      <div class="progress-right">
+        <span class="progress-pct" id="progressPct">0%</span>
+        <button class="btn btn-danger" id="stopBtn" style="padding:0.3rem 0.7rem;font-size:0.76rem;" onclick="stopGeneration()">⏹ Cancel</button>
+      </div>
+    </div>
+    <div class="progress-track">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+    <div class="stages-row">
+      <div class="stage-pill" id="sp1"><span class="pname">Stage 1</span><span class="psub">Audio</span></div>
+      <div class="stage-pill" id="sp2"><span class="pname">Stage 2</span><span class="psub">Storyboard</span></div>
+      <div class="stage-pill" id="sp3"><span class="pname">Stage 3</span><span class="psub">Images</span></div>
+      <div class="stage-pill" id="sp4"><span class="pname">Stage 4</span><span class="psub">Video</span></div>
+    </div>
+  </div>
+
+  <!-- Error -->
+  <div class="error-panel" id="errorPanel">
+    <div class="error-head">
+      <span>⚠ Error</span>
+      <span class="error-close" onclick="hideError()">×</span>
+    </div>
+    <div id="errorMsg"></div>
+    <div id="errorDetail"></div>
+  </div>
+
+  <!-- Results -->
+  <div class="results-panel" id="resultsPanel">
+
+    <div class="result-head">
+      <h2>Result</h2>
+    </div>
+
+    <!-- Video player -->
+    <div class="player-wrap" id="playerWrap">
+      <video id="resultVideo" preload="metadata"></video>
+      <div class="v-overlay" id="vOverlay" onclick="togglePlay()">
+        <div class="v-play-big" id="vPlayBig">▶</div>
+      </div>
+      <div class="v-controls">
+        <button class="v-btn" id="vPlayBtn" onclick="togglePlay()">▶</button>
+        <span class="v-time-cur" id="vCurTime">0:00</span>
+        <div class="v-scrub" id="vScrub">
+          <div class="v-scrub-fill" id="vScrubFill" style="width:0%"></div>
+        </div>
+        <span class="v-time-dur" id="vDurTime">0:00</span>
+        <button class="v-btn" id="vVolBtn" onclick="toggleMute()">🔊</button>
+        <button class="v-btn" onclick="goFullscreen()" title="Fullscreen">⛶</button>
+      </div>
+    </div>
+
+    <div class="story-text" id="storyText" style="display:none"></div>
+
+    <div class="result-actions">
+      <button class="btn btn-secondary" id="downloadBtn">⬇ Download video</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('resultsPanel').classList.remove('visible');document.getElementById('resultsPanel').style.display='none';">✕ Close</button>
+    </div>
+
+    <div class="stats-grid" id="statsGrid"></div>
+
+    <div class="tabs-bar">
+      <button class="tab-btn active" onclick="showTab('storyboard', this)">Storyboard</button>
+      <button class="tab-btn" onclick="showTab('frameset', this)">Frameset</button>
+      <button class="tab-btn" onclick="showTab('job', this)">Job inspector</button>
+    </div>
+
+    <div class="tab-pane active" id="tabStoryboard">
+      <div class="json-viewer" id="storyboardJson">No storyboard available.</div>
+    </div>
+    <div class="tab-pane" id="tabFrameset">
+      <div class="json-viewer" id="framesetJson">No frameset available.</div>
+    </div>
+    <div class="tab-pane" id="tabJob">
+      <div class="jlookup">
+        <input type="text" id="jobLookupInput" placeholder="Job ID (e.g. abc12345)">
+        <button class="btn btn-secondary" onclick="lookupJob()">Inspect</button>
+      </div>
+      <div class="json-viewer" id="jobDetailsJson">Enter a job ID to inspect.</div>
+    </div>
+
+  </div>
+
+  <!-- Dev console (collapsible) -->
+  <div class="console-wrap">
+    <button class="console-toggle" id="consoleToggleBtn" onclick="toggleConsole()">
+      <span id="consoleTitle">Developer console (0 entries)</span>
+      <span class="c-arrow" id="cArrow">▼</span>
+    </button>
+    <div class="console-body" id="consoleBody">
+      <div class="console-acts">
+        <button onclick="clearConsole()">Clear</button>
+      </div>
+      <div class="console" id="console"></div>
+    </div>
+  </div>
+
+</div><!-- .container -->
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════════
+const API_BASE = window.location.origin;
+
+let selectedStyle    = null;
+let selectedFile     = null;
+let croppedBlob      = null;   // Set when slicer is used
+let generationMode   = 'fast';
+let maxFrames        = 15;
+let consoleEntries   = [];
+let pollingInterval  = null;
+let lastLogCount     = 0;
+let currentJobId     = null;
+let audioBuffer      = null;   // Decoded Web Audio buffer
+let slicer           = null;   // AudioSlicer instance
+
+// Progress stage weights (must sum to 100)
+const W_STAGE  = [10, 20, 55, 15];
+const W_CUMUL  = [0, 10, 30, 85, 100]; // cumulative starts
+
+// ════════════════════════════════════════════════════════════════
+// CONSOLE
+// ════════════════════════════════════════════════════════════════
+function log(msg, type = 'info') {
+  const ts   = new Date().toLocaleTimeString();
+  const line = document.createElement('div');
+  line.className = `cline ${type}`;
+  line.textContent = `[${ts}] ${msg}`;
+  const con = document.getElementById('console');
+  con.appendChild(line);
+  con.scrollTop = con.scrollHeight;
+  consoleEntries.push(line);
+  document.getElementById('consoleTitle').textContent =
+    `Developer console (${consoleEntries.length} entries)`;
+}
+
+function clearConsole() {
+  document.getElementById('console').innerHTML = '';
+  consoleEntries = [];
+  document.getElementById('consoleTitle').textContent = 'Developer console (0 entries)';
+}
+
+function toggleConsole() {
+  const body = document.getElementById('consoleBody');
+  const btn  = document.getElementById('consoleToggleBtn');
+  const arr  = document.getElementById('cArrow');
+  body.classList.toggle('open');
+  btn.classList.toggle('open');
+  arr.textContent = body.classList.contains('open') ? '▲' : '▼';
+}
+
+// ════════════════════════════════════════════════════════════════
+// PROGRESS BAR
+// ════════════════════════════════════════════════════════════════
+let _framesDone = 0, _framesTotal = 0;
+
+function setProgress(pct, label) {
+  document.getElementById('progressFill').style.width = `${pct}%`;
+  document.getElementById('progressPct').textContent = `${Math.round(pct)}%`;
+  if (label) document.getElementById('progressLabel').textContent = label;
+}
+
+function setStagePill(n, state) {
+  const el = document.getElementById(`sp${n}`);
+  el.className = `stage-pill${state ? ' ' + state : ''}`;
+}
+
+function resetStages() {
+  for (let i = 1; i <= 4; i++) setStagePill(i, '');
+  setProgress(0, 'Starting pipeline…');
+  _framesDone = 0; _framesTotal = 0;
+}
+
+function updateProgress(stage, logs) {
+  // Parse frame progress from stage-3 logs
+  if (stage === 3 && logs) {
+    for (let i = logs.length - 1; i >= 0; i--) {
+      const m = (logs[i].message || '').match(/[Ff]rame\s+(\d+)\s*\/\s*(\d+)/);
+      if (m) { _framesDone = +m[1]; _framesTotal = +m[2]; break; }
+    }
+  }
+
+  const base   = W_CUMUL[Math.max(0, stage - 1)];
+  const weight = W_STAGE[Math.max(0, stage - 1)];
+  let frac = 0;
+  if (stage === 3 && _framesTotal > 0) frac = _framesDone / _framesTotal;
+  else if (stage > 0) frac = 0.35;
+
+  const pct = Math.min(99, base + weight * frac);
+  const labels = ['', 'Analyzing audio…', 'Generating storyboard…',
+                  'Rendering images…', 'Assembling video…'];
+  setProgress(pct, labels[stage] || 'Processing…');
+
+  for (let s = 1; s <= 4; s++) {
+    if (s < stage)      setStagePill(s, 'done');
+    else if (s === stage) setStagePill(s, 'active');
+    else                  setStagePill(s, '');
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// AUDIO SLICER — WAVEFORM CANVAS + DRAG
+// ════════════════════════════════════════════════════════════════
+class AudioSlicer {
+  constructor(canvas, buffer) {
+    this.canvas   = canvas;
+    this.ctx      = canvas.getContext('2d');
+    this.buffer   = buffer;
+    this.duration = buffer.duration;
+    this.WINDOW   = 30;
+    this.startT   = 0;
+    this._dragging = false;
+    this._dragX   = 0;
+    this._dragT   = 0;
+    this._peaks   = this._buildPeaks();
+    this.render();
+    this._bind();
+  }
+
+  _buildPeaks() {
+    const W    = this.canvas.width;
+    const data = this.buffer.getChannelData(0);
+    const step = Math.max(1, Math.ceil(data.length / W));
+    const peaks = new Float32Array(W);
+    for (let x = 0; x < W; x++) {
+      let max = 0;
+      const off = x * step;
+      for (let i = 0; i < step && off + i < data.length; i++) {
+        const v = Math.abs(data[off + i]);
+        if (v > max) max = v;
+      }
+      peaks[x] = max;
+    }
+    return peaks;
+  }
+
+  render() {
+    const W = this.canvas.width;
+    const H = this.canvas.height;
+    const c = this.ctx;
+
+    c.fillStyle = '#080812';
+    c.fillRect(0, 0, W, H);
+
+    const sx = (this.startT / this.duration) * W;
+    const ex = ((this.startT + this.WINDOW) / this.duration) * W;
+
+    // Full waveform (dim)
+    for (let x = 0; x < W; x++) {
+      const h = Math.max(2, this._peaks[x] * H * 0.85);
+      const y = (H - h) / 2;
+      const inside = x >= sx && x < ex;
+      c.fillStyle = inside ? '#7c6cfa' : '#262650';
+      c.fillRect(x, y, 1, h);
+    }
+
+    // Dim mask outside selection
+    c.fillStyle = 'rgba(8,8,18,0.52)';
+    c.fillRect(0, 0, sx, H);
+    c.fillRect(ex, 0, W - ex, H);
+
+    // Selection border
+    c.strokeStyle = 'rgba(124,108,250,0.85)';
+    c.lineWidth = 1.5;
+    c.strokeRect(sx + 0.75, 0.75, (ex - sx) - 1.5, H - 1.5);
+
+    // Drag handle ticks
+    [[sx + 5, 0.28, 0.72], [ex - 5, 0.28, 0.72]].forEach(([hx, t, b]) => {
+      c.beginPath();
+      c.strokeStyle = 'rgba(255,255,255,0.45)';
+      c.lineWidth = 1.5;
+      c.moveTo(hx, H * t); c.lineTo(hx, H * b);
+      c.stroke();
+    });
+  }
+
+  _clamp(t) { return Math.max(0, Math.min(this.duration - this.WINDOW, t)); }
+
+  _xToTime(x) { return (x / this.canvas.width) * this.duration; }
+
+  _bind() {
+    const start = (x) => {
+      this._dragging = true;
+      this._dragX = x;
+      this._dragT = this.startT;
+    };
+    const move = (x) => {
+      if (!this._dragging) return;
+      this.startT = this._clamp(this._dragT + this._xToTime(x - this._dragX));
+      this.render();
+      this.onChange && this.onChange(this.startT);
+    };
+    const end = () => { this._dragging = false; };
+
+    this.canvas.addEventListener('mousedown', e => start(e.offsetX));
+    this.canvas.addEventListener('mousemove', e => move(e.offsetX));
+    window.addEventListener('mouseup', end);
+
+    this.canvas.addEventListener('touchstart', e => {
+      const r = this.canvas.getBoundingClientRect();
+      start(e.touches[0].clientX - r.left);
+      e.preventDefault();
+    }, { passive: false });
+
+    this.canvas.addEventListener('touchmove', e => {
+      const r = this.canvas.getBoundingClientRect();
+      move(e.touches[0].clientX - r.left);
+      e.preventDefault();
+    }, { passive: false });
+
+    window.addEventListener('touchend', end);
+  }
+
+  getStart() { return this.startT; }
+}
+
+// ════════════════════════════════════════════════════════════════
+// WAV ENCODER (crop audio to 30s window client-side)
+// ════════════════════════════════════════════════════════════════
+async function cropAudio(file, startSeconds) {
+  const arrBuf  = await file.arrayBuffer();
+  const tmpCtx  = new (window.AudioContext || window.webkitAudioContext)();
+  const srcBuf  = await tmpCtx.decodeAudioData(arrBuf);
+  tmpCtx.close();
+
+  const sr      = srcBuf.sampleRate;
+  const ch      = srcBuf.numberOfChannels;
+  const frames  = Math.min(Math.floor(30 * sr),
+                           srcBuf.length - Math.floor(startSeconds * sr));
+  const offline = new OfflineAudioContext(ch, frames, sr);
+  const src     = offline.createBufferSource();
+  src.buffer = srcBuf;
+  src.connect(offline.destination);
+  src.start(0, startSeconds, 30);
+  const rendered = await offline.startRendering();
+  return bufToWav(rendered);
+}
+
+function bufToWav(buf) {
+  const ch  = buf.numberOfChannels;
+  const sr  = buf.sampleRate;
+  const len = buf.length;
+  const ab  = new ArrayBuffer(44 + len * ch * 2);
+  const dv  = new DataView(ab);
+  const s   = (o, v) => { for (let i = 0; i < v.length; i++) dv.setUint8(o + i, v.charCodeAt(i)); };
+
+  s(0,'RIFF'); dv.setUint32(4, ab.byteLength - 8, true);
+  s(8,'WAVE'); s(12,'fmt ');
+  dv.setUint32(16, 16, true);
+  dv.setUint16(20, 1, true);      // PCM
+  dv.setUint16(22, ch, true);
+  dv.setUint32(24, sr, true);
+  dv.setUint32(28, sr * ch * 2, true);
+  dv.setUint16(32, ch * 2, true);
+  dv.setUint16(34, 16, true);
+  s(36,'data'); dv.setUint32(40, len * ch * 2, true);
+
+  let off = 44;
+  for (let i = 0; i < len; i++) {
+    for (let c = 0; c < ch; c++) {
+      const v = Math.max(-1, Math.min(1, buf.getChannelData(c)[i]));
+      dv.setInt16(off, Math.round(v * 0x7FFF), true);
+      off += 2;
+    }
+  }
+  return new Blob([ab], { type: 'audio/wav' });
+}
+
+function fmt(s) {
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2,'0')}`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// UPLOAD HANDLING
+// ════════════════════════════════════════════════════════════════
+async function handleFile(file) {
+  selectedFile = file;
+  croppedBlob  = null;
+  audioBuffer  = null;
+  slicer       = null;
+
+  document.getElementById('uploadZone').classList.add('has-file');
+  document.getElementById('uploadText').textContent = '📎 Click to change file';
+  document.getElementById('slicerPanel').style.display = 'none';
+
+  // Decode audio to check duration
+  const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
+  let decoded;
+  try {
+    const arr = await file.arrayBuffer();
+    decoded   = await tmpCtx.decodeAudioData(arr);
+  } catch (e) {
+    document.getElementById('fileInfo').className = 'warn';
+    document.getElementById('fileInfo').textContent = `Could not decode: ${e.message}`;
+    tmpCtx.close();
+    return;
+  }
+  tmpCtx.close();
+  audioBuffer = decoded;
+
+  const dur  = decoded.duration;
+  const mb   = (file.size / 1024 / 1024).toFixed(2);
+
+  if (dur <= 30) {
+    document.getElementById('fileInfo').className = 'ok';
+    document.getElementById('fileInfo').textContent = `✅ ${file.name} — ${fmt(dur)} / ${mb} MB`;
+    log(`Audio ready: ${file.name} (${dur.toFixed(1)}s)`, 'success');
+  } else {
+    document.getElementById('fileInfo').className = 'warn';
+    document.getElementById('fileInfo').textContent =
+      `📐 ${file.name} — ${fmt(dur)} total · slice 30s below`;
+
+    // Show slicer
+    document.getElementById('slicerPanel').style.display = 'block';
+
+    // Wait for layout, then init canvas
+    requestAnimationFrame(() => {
+      const canvas  = document.getElementById('waveCanvas');
+      const wrapper = canvas.parentElement;
+      canvas.width  = Math.max(400, wrapper.clientWidth - 2);
+      canvas.height = 72;
+      slicer = new AudioSlicer(canvas, decoded);
+      slicer.onChange = (t) => {
+        const end = Math.min(dur, t + 30);
+        document.getElementById('sliceStartLabel').textContent = fmt(t);
+        document.getElementById('sliceEndLabel').textContent   = fmt(end);
+        document.getElementById('sliceSelBadge').textContent   = `${fmt(t)} → ${fmt(end)} selected`;
+      };
+      slicer.onChange(0);
+    });
+
+    log(`Audio loaded (${dur.toFixed(1)}s) — slicer active`, 'warn');
+  }
+
+  updateReadyState();
+}
+
+document.getElementById('uploadZone').onclick = () =>
+  document.getElementById('audioInput').click();
+document.getElementById('audioInput').onchange = e => {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+};
+function handleDragOver(e)  { e.preventDefault(); e.stopPropagation(); document.getElementById('uploadZone').classList.add('dragover'); }
+function handleDragLeave(e) { document.getElementById('uploadZone').classList.remove('dragover'); }
+function handleDrop(e) {
+  e.preventDefault(); e.stopPropagation();
+  document.getElementById('uploadZone').classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (f) handleFile(f);
+}
+
+// ════════════════════════════════════════════════════════════════
+// SETTINGS
+// ════════════════════════════════════════════════════════════════
+function setMode(mode) {
+  generationMode = mode;
+  document.getElementById('modeFast').classList.toggle('selected', mode === 'fast');
+  document.getElementById('modeQuality').classList.toggle('selected', mode === 'quality');
+  // Apply defaults
+  if (mode === 'fast')    { document.getElementById('cfSteps').value = 20; document.getElementById('cfDenoise').value = 0.75; }
+  else                    { document.getElementById('cfSteps').value = 30; document.getElementById('cfDenoise').value = 0.65; }
+  log(`Mode: ${mode}`, 'info');
+}
+
+function toggleComfy() {
+  const body = document.getElementById('comfyBody');
+  const btn  = document.getElementById('comfyToggle');
+  body.classList.toggle('open');
+  btn.classList.toggle('open');
+  btn.querySelector('.comfy-arrow').textContent = body.classList.contains('open') ? '▲' : '▼';
+}
+
+function updateFrameCount() {
+  maxFrames = parseInt(document.getElementById('maxFrames').value);
+  document.getElementById('frameCountVal').textContent = maxFrames;
+}
+
+function selectStyle(key) {
+  selectedStyle = key;
+  document.querySelectorAll('.style-btn').forEach(b => b.classList.remove('selected'));
+  document.querySelector(`[data-key="${key}"]`)?.classList.add('selected');
+  updateReadyState();
+  log(`Style: ${key}`, 'info');
+}
+
+function updateReadyState() {
+  const ready = !!(selectedFile && selectedStyle);
+  document.getElementById('generateBtn').disabled   = !ready;
+  document.getElementById('testStage1Btn').disabled = !selectedFile;
+  document.getElementById('testStage2Btn').disabled = !(selectedFile && selectedStyle);
+}
+
+// ════════════════════════════════════════════════════════════════
+// GENERATE VIDEO (async + polling)
+// ════════════════════════════════════════════════════════════════
+async function generateVideo() {
+  hideError();
+  resetStages();
+  document.getElementById('progressPanel').style.display = 'block';
+  document.getElementById('generateBtn').disabled = true;
+  document.getElementById('resultsPanel').classList.remove('visible');
+  document.getElementById('resultsPanel').style.display = 'none';
+  clearConsole();
+  lastLogCount = 0;
+
+  // Crop audio if slicer is active
+  let audioToSend = selectedFile;
+  if (slicer) {
+    log(`Cropping audio: ${fmt(slicer.getStart())} → ${fmt(slicer.getStart() + 30)}…`, 'info');
+    try {
+      croppedBlob = await cropAudio(selectedFile, slicer.getStart());
+      audioToSend = new File([croppedBlob], 'clip.wav', { type: 'audio/wav' });
+      log('Audio cropped successfully.', 'success');
+    } catch (e) {
+      showError('Audio crop failed', e.message);
+      document.getElementById('progressPanel').style.display = 'none';
+      document.getElementById('generateBtn').disabled = false;
+      return;
+    }
+  }
+
+  const fd = new FormData();
+  fd.append('audio',    audioToSend);
+  fd.append('style',    selectedStyle);
+  fd.append('max_frames', maxFrames);
+  fd.append('mode',     generationMode);
+  fd.append('steps',    document.getElementById('cfSteps').value);
+  fd.append('guidance', document.getElementById('cfGuidance').value);
+  fd.append('width',    document.getElementById('cfWidth').value);
+  fd.append('height',   document.getElementById('cfHeight').value);
+  fd.append('denoise',  document.getElementById('cfDenoise').value);
+  fd.append('seed',     document.getElementById('cfSeed').value);
+
+  log(`Submitting job — mode=${generationMode}, frames=${maxFrames}, style=${selectedStyle}`, 'info');
+
+  try {
+    setStagePill(1, 'active');
+
+    const resp = await fetch(`${API_BASE}/generate`, { method: 'POST', body: fd });
+
+    if (!resp.ok) {
+      const txt = await resp.text();
+      let msg = `HTTP ${resp.status}`, detail = txt;
+      try { const j = JSON.parse(txt); msg = j.detail || j.message || msg; detail = JSON.stringify(j, null, 2); } catch(_) {}
+      showError(msg, detail);
+      document.getElementById('progressPanel').style.display = 'none';
+      document.getElementById('generateBtn').disabled = false;
+      return;
+    }
+
+    const result = await resp.json();
+    currentJobId = result.job_id;
+    log(`Job started: ${currentJobId} — polling every 2s…`, 'success');
+
+    pollingInterval = setInterval(pollJobProgress, 2000);
+    await pollJobProgress();
+
+  } catch (e) {
+    showError('Network error', e.message);
+    if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+    document.getElementById('progressPanel').style.display = 'none';
+    document.getElementById('generateBtn').disabled = false;
+  }
+}
+
+async function pollJobProgress() {
+  if (!currentJobId) return;
+  try {
+    const r = await fetch(`${API_BASE}/jobs/${currentJobId}`);
+    if (!r.ok) { log(`Poll HTTP ${r.status}`, 'error'); return; }
+    const job = await r.json();
+
+    if (job.current_stage) updateProgress(job.current_stage, job.logs);
+
+    if (Array.isArray(job.logs)) {
+      for (let i = lastLogCount; i < job.logs.length; i++) {
+        log(job.logs[i].message, job.logs[i].type || 'info');
+      }
+      lastLogCount = job.logs.length;
+    }
+
+    if (job.status === 'completed') {
+      clearInterval(pollingInterval); pollingInterval = null;
+      setProgress(100, 'Complete');
+      for (let s = 1; s <= 4; s++) setStagePill(s, 'done');
+      log(`Job ${currentJobId} complete.`, 'success');
+      showResults(job.result || null, null, job);
+      document.getElementById('progressPanel').style.display = 'none';
+      document.getElementById('generateBtn').disabled = false;
+
+    } else if (job.status === 'failed') {
+      clearInterval(pollingInterval); pollingInterval = null;
+      document.getElementById('progressPanel').style.display = 'none';
+      document.getElementById('generateBtn').disabled = false;
+      showError(`Pipeline failed: ${job.error || 'Unknown error'}`, '');
+
+    } else if (job.status === 'cancelled') {
+      clearInterval(pollingInterval); pollingInterval = null;
+      document.getElementById('progressPanel').style.display = 'none';
+      document.getElementById('generateBtn').disabled = false;
+      log('Pipeline cancelled.', 'warn');
+    }
+  } catch (e) {
+    log(`Polling error: ${e.message}`, 'error');
+  }
+}
+
+function stopGeneration() {
+  if (!currentJobId) return;
+  log(`Requesting cancellation for job ${currentJobId}…`, 'warn');
+  fetch(`${API_BASE}/jobs/${currentJobId}/cancel`, { method: 'POST' })
+    .then(r => r.json())
+    .then(() => log('Cancellation sent. Pipeline stops at next stage boundary.', 'warn'))
+    .catch(e => log(`Cancel error: ${e.message}`, 'error'));
+}
+
+// ════════════════════════════════════════════════════════════════
+// VIDEO PLAYER
+// ════════════════════════════════════════════════════════════════
+function initPlayer() {
+  const v    = document.getElementById('resultVideo');
+  const wrap = document.getElementById('playerWrap');
+
+  v.addEventListener('timeupdate', () => {
+    const cur = v.currentTime, dur = v.duration || 0;
+    document.getElementById('vCurTime').textContent  = fmt(cur);
+    document.getElementById('vScrubFill').style.width = dur ? `${(cur/dur)*100}%` : '0%';
+  });
+
+  v.addEventListener('loadedmetadata', () => {
+    document.getElementById('vDurTime').textContent = fmt(v.duration);
+    wrap.classList.remove('loading');
+  });
+
+  v.addEventListener('waiting', () => { wrap.classList.add('loading'); });
+  v.addEventListener('canplay', () => { wrap.classList.remove('loading'); });
+
+  v.addEventListener('play', () => {
+    document.getElementById('vPlayBtn').textContent = '⏸';
+    document.getElementById('vPlayBig').textContent = '⏸';
+    document.getElementById('vOverlay').classList.add('hide');
+    wrap.classList.remove('paused');
+  });
+
+  v.addEventListener('pause', () => {
+    document.getElementById('vPlayBtn').textContent = '▶';
+    document.getElementById('vPlayBig').textContent = '▶';
+    document.getElementById('vOverlay').classList.remove('hide');
+    wrap.classList.add('paused');
+  });
+
+  v.addEventListener('ended', () => {
+    document.getElementById('vPlayBtn').textContent = '↺';
+    document.getElementById('vPlayBig').textContent = '↺';
+    document.getElementById('vOverlay').classList.remove('hide');
+    wrap.classList.add('paused');
+  });
+
+  // Scrubber
+  document.getElementById('vScrub').addEventListener('click', e => {
+    const r = e.currentTarget.getBoundingClientRect();
+    if (v.duration) v.currentTime = ((e.clientX - r.left) / r.width) * v.duration;
+  });
+}
+
+function togglePlay() {
+  const v = document.getElementById('resultVideo');
+  if (v.paused || v.ended) v.play(); else v.pause();
+}
+
+function toggleMute() {
+  const v = document.getElementById('resultVideo');
+  v.muted = !v.muted;
+  document.getElementById('vVolBtn').textContent = v.muted ? '🔇' : '🔊';
+}
+
+function goFullscreen() {
+  const wrap = document.getElementById('playerWrap');
+  const fn = wrap.requestFullscreen || wrap.webkitRequestFullscreen || wrap.mozRequestFullScreen;
+  if (fn) fn.call(wrap);
+}
+
+// ════════════════════════════════════════════════════════════════
+// ERRORS
+// ════════════════════════════════════════════════════════════════
+function showError(msg, detail) {
+  document.getElementById('errorMsg').textContent    = msg;
+  document.getElementById('errorDetail').textContent = detail || '';
+  document.getElementById('errorPanel').classList.add('visible');
+  log(`ERROR: ${msg}`, 'error');
+}
+
+function hideError() { document.getElementById('errorPanel').classList.remove('visible'); }
+
+// ════════════════════════════════════════════════════════════════
+// RESULTS
+// ════════════════════════════════════════════════════════════════
+function showResults(result, testResult = null, jobData = null) {
+  const panel = document.getElementById('resultsPanel');
+  panel.classList.add('visible');
+  panel.style.display = 'block';
+  const v = document.getElementById('resultVideo');
+
+  if (result && result.job_id) {
+    // Full pipeline result — load video
+    document.getElementById('playerWrap').style.display = 'block';
+    document.getElementById('playerWrap').classList.add('loading', 'paused');
+    document.getElementById('vOverlay').classList.remove('hide');
+    document.getElementById('vPlayBig').textContent = '▶';
+    document.getElementById('vPlayBtn').textContent  = '▶';
+
+    v.src = `${API_BASE}/download/${result.job_id}`;
+    v.load();
+
+    const story = result.story || '';
+    document.getElementById('storyText').textContent = story;
+    document.getElementById('storyText').style.display = story ? 'block' : 'none';
+
+    const provider = window.backendConfig
+      ? (window.backendConfig.use_comfyui ? `ComfyUI (${window.backendConfig.comfyui_model || 'local'})` : 'HuggingFace')
+      : '—';
+
+    document.getElementById('statsGrid').innerHTML = [
+      ['Job ID',   result.job_id],
+      ['Mode',     result.generation_mode],
+      ['Style',    result.style],
+      ['Mood',     result.mood_detected],
+      ['Scenes',   result.total_scenes],
+      ['Frames',   result.total_frames],
+      ['Time',     `${result.processing_time_seconds}s`],
+      ['Provider', provider],
+    ].map(([l, v]) => `<div class="stat"><span class="slabel">${l}</span><span class="svalue">${v}</span></div>`).join('');
+
+    document.getElementById('downloadBtn').onclick = () =>
+      window.open(`${API_BASE}/download/${result.job_id}`);
+
+    const fill = (job) => {
+      if (job.storyboard) document.getElementById('storyboardJson').textContent = JSON.stringify(job.storyboard, null, 2);
+      if (job.frameset)   document.getElementById('framesetJson').textContent   = JSON.stringify(job.frameset, null, 2);
+      document.getElementById('jobDetailsJson').textContent = JSON.stringify(job, null, 2);
+    };
+    jobData ? fill(jobData)
+            : fetch(`${API_BASE}/jobs/${result.job_id}`).then(r=>r.json()).then(fill).catch(()=>{});
+
+  } else if (testResult && testResult.storyboard) {
+    // Stage 2 test
+    document.getElementById('playerWrap').style.display = 'none';
+    const st = testResult.storyboard.main_story || '';
+    document.getElementById('storyText').textContent = st;
+    document.getElementById('storyText').style.display = st ? 'block' : 'none';
+
+    document.getElementById('statsGrid').innerHTML = [
+      ['Mode',   testResult.storyboard.generation_mode],
+      ['Scenes', testResult.storyboard.total_scenes],
+      ['Mood',   testResult.audio_analysis?.detected_mood || '?'],
+    ].map(([l, v]) => `<div class="stat"><span class="slabel">${l}</span><span class="svalue">${v}</span></div>`).join('');
+
+    document.getElementById('storyboardJson').textContent = JSON.stringify(testResult.storyboard, null, 2);
+    document.getElementById('framesetJson').textContent   = 'N/A — Stage 2 test only.';
+    document.getElementById('jobDetailsJson').textContent = 'N/A — Stage 2 test only.';
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// STAGE TESTS
+// ════════════════════════════════════════════════════════════════
+async function testStage1() {
+  hideError();
+  document.getElementById('progressPanel').style.display = 'block';
+  document.getElementById('testStage1Btn').disabled = true;
+  resetStages(); setStagePill(1, 'active'); setProgress(10, 'Analyzing audio…');
+
+  const fd = new FormData();
+  fd.append('audio', selectedFile);
+  fd.append('whisper_model', 'base');
+  log('Testing Stage 1 (audio analysis)…', 'info');
+
+  try {
+    const r = await fetch(`${API_BASE}/test/stage1`, { method: 'POST', body: fd });
+    if (!r.ok) { showError(`Stage 1 HTTP ${r.status}`, await r.text()); return; }
+    const result = await r.json();
+
+    setStagePill(1, 'done'); setProgress(100, 'Stage 1 complete');
+    log(`Stage 1 OK — mood=${result.detected_mood}, tempo=${result.tempo} BPM`, 'success');
+
+    document.getElementById('resultsPanel').classList.add('visible');
+    document.getElementById('resultsPanel').style.display = 'block';
+    document.getElementById('playerWrap').style.display = 'none';
+    document.getElementById('storyText').textContent = `Mood: ${result.detected_mood} · Tempo: ${result.tempo} BPM`;
+    document.getElementById('storyText').style.display = 'block';
+    document.getElementById('storyboardJson').textContent = JSON.stringify(result, null, 2);
+    document.getElementById('framesetJson').textContent   = 'N/A — Stage 1 test.';
+    document.getElementById('jobDetailsJson').textContent = 'N/A — Stage 1 test.';
+    document.getElementById('statsGrid').innerHTML = [
+      ['Mood', result.detected_mood], ['Tempo', `${result.tempo} BPM`],
+      ['Duration', `${result.duration}s`], ['Onsets', result.onset_times?.length ?? '?'],
+    ].map(([l,v]) => `<div class="stat"><span class="slabel">${l}</span><span class="svalue">${v}</span></div>`).join('');
+
+  } catch (e) { showError('Stage 1 network error', e.message); }
+  finally {
+    document.getElementById('progressPanel').style.display = 'none';
+    document.getElementById('testStage1Btn').disabled = false;
+  }
+}
+
+async function testStage2() {
+  hideError();
+  document.getElementById('progressPanel').style.display = 'block';
+  document.getElementById('testStage2Btn').disabled = true;
+  resetStages();
+  setStagePill(1, 'done'); setStagePill(2, 'active');
+  setProgress(25, 'Generating storyboard…');
+
+  const fd = new FormData();
+  fd.append('audio', selectedFile);
+  fd.append('style', selectedStyle);
+  fd.append('mode', generationMode);
+  fd.append('whisper_model', 'base');
+  fd.append('max_frames', maxFrames);
+  log(`Testing Stage 2 — mode=${generationMode}…`, 'info');
+
+  try {
+    const r = await fetch(`${API_BASE}/test/stage2`, { method: 'POST', body: fd });
+    if (!r.ok) { showError(`Stage 2 HTTP ${r.status}`, await r.text()); return; }
+    const result = await r.json();
+    setStagePill(2, 'done'); setProgress(100, 'Stage 2 complete');
+    log(`Stage 2 OK — ${result.storyboard.total_scenes} scenes`, 'success');
+    showResults(null, result);
+  } catch (e) { showError('Stage 2 network error', e.message); }
+  finally {
+    document.getElementById('progressPanel').style.display = 'none';
+    document.getElementById('testStage2Btn').disabled = false;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// TABS
+// ════════════════════════════════════════════════════════════════
+function showTab(name, btn) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`tab${name[0].toUpperCase() + name.slice(1)}`).classList.add('active');
+  if (btn) btn.classList.add('active');
+  if (name === 'job') { const id = document.getElementById('jobLookupInput').value.trim(); if (id) lookupJob(); }
+}
+
+// ════════════════════════════════════════════════════════════════
+// JOB LOOKUP
+// ════════════════════════════════════════════════════════════════
+async function lookupJob() {
+  const id = document.getElementById('jobLookupInput').value.trim();
+  if (!id) return;
+  try {
+    const r = await fetch(`${API_BASE}/jobs/${id}`);
+    document.getElementById('jobDetailsJson').textContent = r.ok
+      ? JSON.stringify(await r.json(), null, 2)
+      : `Not found (HTTP ${r.status})`;
+  } catch (e) {
+    document.getElementById('jobDetailsJson').textContent = `Error: ${e.message}`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// CONFIG + STYLES
+// ════════════════════════════════════════════════════════════════
+async function loadConfig() {
+  try {
+    const cfg = await (await fetch(`${API_BASE}/config`)).json();
+    window.backendConfig = cfg;
+    document.getElementById('statusDot').className = 'sdot online';
+    document.getElementById('statusText').textContent = cfg.use_comfyui
+      ? `ComfyUI · ${cfg.generation_mode_default}`
+      : `HuggingFace · ${cfg.generation_mode_default}`;
+    log(`Backend online — ${cfg.use_comfyui ? 'ComfyUI' : 'HF'} / ${cfg.generation_mode_default}`, 'success');
+  } catch (e) {
+    document.getElementById('statusDot').className = 'sdot offline';
+    document.getElementById('statusText').textContent = 'Backend offline';
+    log(`Backend offline: ${e.message}`, 'error');
+  }
+}
+
+async function loadStyles() {
+  const grid = document.getElementById('stylesGrid');
+  try {
+    const styles = await (await fetch(`${API_BASE}/styles`)).json();
+    grid.innerHTML = '';
+    Object.entries(styles).forEach(([key, s]) => {
+      const btn = document.createElement('div');
+      btn.className   = 'style-btn';
+      btn.dataset.key = key;
+      btn.innerHTML   = `<span class="sname">${s.display_name}</span><span class="sdesc">${s.description}</span>`;
+      btn.onclick     = () => selectStyle(key);
+      grid.appendChild(btn);
+    });
+    log(`${Object.keys(styles).length} styles loaded`, 'success');
+  } catch (e) {
+    grid.innerHTML = `<div style="color:var(--red);text-align:center;padding:1.25rem;font-size:0.82rem;grid-column:1/-1;">Failed to load styles — is the server running?</div>`;
+    log(`Styles failed: ${e.message}`, 'error');
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  setMode('fast');
+  initPlayer();
+  loadConfig();
+  loadStyles();
+  document.getElementById('playerWrap').classList.add('paused');
+});
+</script>
+</body>
+</html>

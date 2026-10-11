@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+
+# Virtual Environment
+.venv/
+venv/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+temp/
+*.mp4
+*.mp3
+*.wav
+*.ogg
+*.m4a
+*.m4a
+temp_audio.m4a
+*.json.bak
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Whisper models cache
+~/.cache/whisper/
+
+# HuggingFace cache
+~/.cache/huggingface/
+
+# Python venv
+pyvenv.cfg

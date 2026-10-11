@@ -1,0 +1,15 @@
+librosa==0.11.0
+openai-whisper==20250625
+groq==1.0.0
+huggingface_hub==1.8.0
+Pillow==11.3.0
+opencv-python==5.0.0.93
+moviepy==2.2.1
+numpy==2.0.2
+scipy==1.13.1
+fastapi==0.128.8
+uvicorn==0.39.0
+python-multipart==0.0.20
+pydantic==2.13.5
+python-dotenv==1.2.1
+requests==2.32.5
