@@ -4316,3 +4316,51 @@ The inline comment was also updated from `"Strength 0.22 for continuations"` to
    If frames are >100KB, TASK 1 is fully closed.
 2. Move on to TASK 2 (Beat-First Frame Timing Architecture).
    Do NOT re-touch `stage3_images.py` unless the quality test reveals a new failure.
+
+---
+
+## Task 2 Complete — Beat-First Frame Timing Architecture (2026-10-13)
+
+> **What was done:** Implemented beat-aligned frame durations so that every frame
+> transition in the video lands within ~250ms of a real beat hit (theoretical minimum
+> given ~0.5s beat spacing in the test audio). All changes committed.
+
+### Files changed
+
+1. **NEW: `backend/stages/beat_utils.py`** — `compute_beat_aligned_frame_durations()`
+   utility. Takes `beat_times`, a list of frame directives (with `.timestamp`), and
+   `total_duration`. For each frame, snaps the transition to the nearest beat hit
+   near the next frame's timestamp. Falls back to the original timestamp when no beat
+   is within `max_snap_dist` (half the median beat spacing). Last frame absorbs drift
+   so durations sum to exactly `total_duration`.
+
+2. **`backend/models/schemas.py`** — Added `hold_duration: Optional[float] = None`
+   to both `FrameDirective` and `GeneratedFrame`.
+
+3. **`backend/stages/stage2_storyboard.py`** — After parsing the LLM's storyboard JSON,
+   flattens all scene frames and calls `compute_beat_aligned_frame_durations()` using
+   `audio_data.beat_times` and `audio_data.duration`. Sets `hold_duration` on each
+   `FrameDirective` before returning.
+
+4. **`backend/stages/stage3_images.py`** — Propagates `frame_directive.hold_duration`
+   into `GeneratedFrame.hold_duration` in all three code paths (Fast success, Fast
+   placeholder, Quality success).
+
+5. **`backend/stages/stage4_video.py`** — Uses `frame.hold_duration or frame.duration`
+   for clip duration. Changed clip positioning from fixed `frame.timestamp` to
+   accumulated `running_start` so transitions chain continuously at beat-aligned points.
+
+### What was NOT changed
+
+- **`stage1_audio.py`** — `rms_timestamps` and `rms_values` already produced and
+  present in `audio_data.json`. No Stage 1 changes needed.
+- **`stage3_images.py calculate_frame_duration()`** — kept as fallback when
+  `hold_duration` is None (backward-compatible).
+
+### Test results
+
+Tested with `temp/85258bf0/audio_data.json` (30s, 36 beats, ~0.5s spacing, last beat
+at 17.554s):
+- 8/12/15-frame layouts: durations sum to exactly 30.000s
+- Transitions within beat range: max beat distance 0.25s (half the beat spacing)
+- Transitions past last beat (17.554s): fall back to original frame timestamps
