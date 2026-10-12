@@ -75,6 +75,7 @@ class FrameDirective(BaseModel):
     frame_id: int
     timestamp: float
     type: FrameType
+    hold_duration: Optional[float] = None  # beat-aligned hold duration (seconds)
     # Only present on KEYFRAME:
     full_prompt: Optional[str] = None          # complete image generation prompt
     visual_state: Optional[str] = None         # KEYFRAME only (Fast mode): what persists into scene's continuations
@@ -124,6 +125,7 @@ class GeneratedFrame(BaseModel):
     type: FrameType
     image_path: str                    # local path to generated .png
     duration: float                    # how long this frame holds in the video
+    hold_duration: Optional[float] = None  # beat-aligned hold duration (set in Stage 3)
     scene_id: int
     prompt_used: str
     strength_used: Optional[float] = None

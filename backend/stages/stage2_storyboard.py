@@ -215,6 +215,20 @@ def generate_storyboard(
 
             storyboard = parse_storyboard_json(raw_json)
 
+            # Beat-align frame durations so transitions land on real beat hits
+            from stages.beat_utils import compute_beat_aligned_frame_durations
+            all_frames = []
+            for scene in storyboard.scenes:
+                all_frames.extend(scene.frames)
+            if all_frames:
+                durations = compute_beat_aligned_frame_durations(
+                    beat_times=audio_data.beat_times,
+                    frame_directives=all_frames,
+                    total_duration=audio_data.duration,
+                )
+                for frame, dur in zip(all_frames, durations):
+                    frame.hold_duration = dur
+
             print(f"[Stage 2] Storyboard parsed successfully.")
             print(f"[Stage 2] Main story: {storyboard.main_story[:100]}...")
             print(f"[Stage 2] Total scenes: {storyboard.total_scenes}")

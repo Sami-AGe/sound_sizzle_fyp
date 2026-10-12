@@ -211,6 +211,7 @@ def generate_all_frames_fast(
                     type=frame_directive.type,
                     image_path=frame_path,
                     duration=duration,
+                    hold_duration=frame_directive.hold_duration,
                     scene_id=scene.scene_id,
                     prompt_used=resolved_prompt,
                     strength_used=None   # N/A for Fast mode
@@ -232,6 +233,7 @@ def generate_all_frames_fast(
                     type=frame_directive.type,
                     image_path=frame_path,
                     duration=duration,
+                    hold_duration=frame_directive.hold_duration,
                     scene_id=scene.scene_id,
                     prompt_used=resolved_prompt,
                     strength_used=None
@@ -420,6 +422,7 @@ def generate_all_frames_quality(
                 type=frame_directive.type,
                 image_path=frame_path,
                 duration=max(0.01, duration),
+                hold_duration=frame_directive.hold_duration,
                 scene_id=scene.scene_id,
                 prompt_used=(frame_directive.full_prompt or frame_directive.modifier_prompt),
                 strength_used=(denoise_override if denoise_override is not None

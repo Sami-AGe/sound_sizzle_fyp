@@ -63,17 +63,18 @@ def build_video(
 
     clips = []
     effects_log = set()
+    running_start = 0.0  # accumulated start time for beat-aligned transitions
 
     total_frames = len(frame_set.frames)
     print(f"[Stage 4] Building video from {total_frames} frames at {TARGET_FPS}fps...")
 
     for i, frame in enumerate(frame_set.frames):
         print(f"[Stage 4] Rendering frame {frame.frame_id}/{total_frames} "
-              f"({frame.type}) at t={frame.timestamp:.2f}s...")
+              f"({frame.type}) at t={frame.timestamp:.2f}s... (hold={frame.hold_duration or frame.duration:.2f}s)")
 
         # Load and resize the image
         raw_image = load_and_resize(frame.image_path, OUTPUT_RESOLUTION)
-        duration = frame.duration
+        duration = frame.hold_duration or frame.duration
         num_frames = max(1, int(duration * TARGET_FPS))
 
         # Get audio context at this frame's timestamp
@@ -129,8 +130,9 @@ def build_video(
 
         # Create clip from this frame's rendered images (moviepy v2 API)
         clip = ImageSequenceClip(frame_images, fps=TARGET_FPS)
-        clip = clip.with_start(frame.timestamp)
+        clip = clip.with_start(running_start)
         clips.append(clip)
+        running_start += duration
 
     print(f"[Stage 4] Assembling {len(clips)} clips into final video...")
     # Composite all clips — moviepy v2 accepts `size` parameter
