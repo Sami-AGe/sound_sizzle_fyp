@@ -48,7 +48,7 @@ def generate_character_anchor(
     Short, focused, fast. Result is frozen for the entire pipeline run.
 
     Returns a dict with: hair, eyes, clothing, body, distinguishing,
-    full_anchor_text, style_anchor, reference_prompt.
+    full_anchor_text, short_anchor_text, style_anchor, reference_prompt.
 
     Approach: Ask the LLM for only the short individual fields (hair, eyes, etc.),
     then construct full_anchor_text and reference_prompt programmatically.
@@ -67,7 +67,8 @@ Generate a character for this video. Return ONLY this JSON (keep all field value
   "eyes": "eye description with emotional quality",
   "clothing": "specific clothing with color and detail",
   "body": "body type and build",
-  "distinguishing": "one unique visual trait (energy aura, weapon, accessory, etc.)"
+  "distinguishing": "one unique visual trait (energy aura, weapon, accessory, etc.)",
+  "short_anchor_text": "3-5 word identity tag, e.g. 'green-haired hero, energy powers'"
 }}
 """
     for attempt in range(max_retries):
@@ -90,7 +91,7 @@ Generate a character for this video. Return ONLY this JSON (keep all field value
                 anchor = json.loads(fixed)
 
             # Validate required keys are present
-            required_keys = {"hair", "eyes", "clothing", "body", "distinguishing"}
+            required_keys = {"hair", "eyes", "clothing", "body", "distinguishing", "short_anchor_text"}
             missing = required_keys - set(anchor.keys())
             if missing:
                 raise ValueError(f"Missing keys in anchor: {missing}")
@@ -107,6 +108,7 @@ Generate a character for this video. Return ONLY this JSON (keep all field value
             )
 
             anchor["full_anchor_text"] = full_anchor_text
+            anchor["short_anchor_text"] = anchor.get("short_anchor_text", full_anchor_text[:60])
             anchor["style_anchor"] = style_anchor
             anchor["reference_prompt"] = reference_prompt
 
@@ -205,7 +207,7 @@ def generate_storyboard(
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.75,
-                max_tokens=8192
+                max_tokens=6000  # Under Groq free-tier 8000 TPM limit (prompt ~700 + 6000 = ~6700)
             )
 
             raw_json = response.choices[0].message.content.strip()

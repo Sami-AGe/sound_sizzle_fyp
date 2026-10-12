@@ -107,9 +107,9 @@ class ComfyUIClient:
         image.save(buf, format="PNG")
         buf.seek(0)
         resp = self.session.post(
-            f"{self.host}/upload",
+            f"{self.host}/upload/image",
             files={"image": (filename, buf, "image/png")},
-            data={"dest": "input"}
+            data={"subfolder": "", "type": "input", "overwrite": "true"}
         )
         resp.raise_for_status()
         return resp.json().get("name", filename)

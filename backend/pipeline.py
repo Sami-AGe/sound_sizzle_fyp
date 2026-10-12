@@ -81,8 +81,11 @@ def run_pipeline(
     if generation_mode is None:
         generation_mode = os.environ.get("GENERATION_MODE", "fast")
 
+    # When called from the API, job_id is None but progress_job_id is set.
+    # Use progress_job_id as the file-path job_id so that /download/{id}
+    # and the /jobs/{id} filesystem merge resolve to the correct directory.
     if job_id is None:
-        job_id = str(uuid.uuid4())[:8]
+        job_id = progress_job_id if progress_job_id else str(uuid.uuid4())[:8]
     job_dir = os.path.join(OUTPUT_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
 

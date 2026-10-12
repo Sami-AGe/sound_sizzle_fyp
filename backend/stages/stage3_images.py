@@ -61,6 +61,10 @@ IMAGE_HEIGHT = 768
 GEN_STEPS = 20
 GUIDANCE_SCALE = 7.5
 
+# Inter-frame delay for GPU thermal management (especially ComfyUI on CPU/RX580).
+# Increase when frames are generated back-to-back and the GPU heats up.
+FRAME_DELAY = float(os.environ.get("FRAME_DELAY", "0.5"))
+
 
 def build_negative_prompt() -> str:
     """Standard negative prompt for consistent quality.
@@ -84,10 +88,12 @@ def resolve_prompt_tokens(raw_prompt: str, anchor) -> str:
     Substitutes {character_anchor} and {style_anchor} tokens in Fast mode prompts.
     Called on every Fast mode frame prompt before sending to HF.
 
+    Uses short_anchor_text (3-5 words) instead of full_anchor_text to prevent
+    the character description from overwhelming scene-specific direction.
     The anchor is a CharacterAnchor Pydantic model (after Storyboard construction),
-    so dot notation is used: anchor.full_anchor_text, anchor.style_anchor.
+    so dot notation is used: anchor.short_anchor_text, anchor.style_anchor.
     """
-    resolved = raw_prompt.replace("{character_anchor}", anchor.full_anchor_text)
+    resolved = raw_prompt.replace("{character_anchor}", anchor.short_anchor_text)
     resolved = resolved.replace("{style_anchor}", anchor.style_anchor)
     return resolved
 
@@ -172,9 +178,9 @@ def generate_all_frames_fast(
                 _cancelled = True
                 break
 
-            frame_counter = frame_directive.frame_id
             frame_progress += 1
-            frame_path = os.path.join(frames_dir, f"frame_{frame_directive.frame_id:03d}.png")
+            frame_counter = frame_progress  # Global counter for unique file paths
+            frame_path = os.path.join(frames_dir, f"frame_{frame_progress:03d}.png")
 
             # Resolve {character_anchor} and {style_anchor} tokens
             resolved_prompt = resolve_prompt_tokens(frame_directive.full_prompt, anchor)
@@ -231,7 +237,7 @@ def generate_all_frames_fast(
                     strength_used=None
                 ))
 
-            time.sleep(0.4)
+            time.sleep(FRAME_DELAY)
 
     log_progress(progress_job_id, f"[Stage 3 FAST] Complete: {len(generated_frames)}/{total_frames_count} frames generated", "success")
 
@@ -290,6 +296,7 @@ def generate_all_frames_quality(
             width=width,
             height=height,
             num_inference_steps=steps,
+            guidance_scale=guidance,
             seed=_random.randint(0, 2**32-1) if not user_seed_override or user_seed_override == -1 else user_seed_override,
         )
     except Exception as e:
@@ -320,8 +327,7 @@ def generate_all_frames_quality(
                 break
 
             frame_counter += 1
-            frame_num = frame_directive.frame_id
-            frame_path = os.path.join(frames_dir, f"frame_{frame_num:03d}.png")
+            frame_path = os.path.join(frames_dir, f"frame_{frame_counter:03d}.png")
 
             log_progress(progress_job_id,
                 f"[Stage 3] [{frame_counter}/{total_frame_count}] "
@@ -348,6 +354,7 @@ def generate_all_frames_quality(
                         width=width,
                         height=height,
                         num_inference_steps=steps,
+                        guidance_scale=guidance,
                         seed=_random.randint(0, 2**32-1) if not user_seed_override or user_seed_override == -1 else user_seed_override,
                     )
 
@@ -359,8 +366,8 @@ def generate_all_frames_quality(
                         f"{scene.color_palette}, "
                         f"{style_trigger_word}"
                     )
-                    # Strength 0.22 for continuations (subtle change), or storyboard value, or override
-                    strength = denoise_override if denoise_override is not None else (frame_directive.strength or 0.22)
+                    # Strength 0.45 for continuations (subtle change), or storyboard value, or override
+                    strength = denoise_override if denoise_override is not None else (frame_directive.strength or 0.45)
 
                     current_image = client.image_to_image(
                         image=previous_image,
@@ -371,6 +378,7 @@ def generate_all_frames_quality(
                         width=width,
                         height=height,
                         num_inference_steps=steps,
+                        guidance_scale=guidance,
                         seed=_random.randint(0, 2**32-1) if not user_seed_override or user_seed_override == -1 else user_seed_override,
                     )
 
@@ -416,11 +424,11 @@ def generate_all_frames_quality(
                 prompt_used=(frame_directive.full_prompt or frame_directive.modifier_prompt),
                 strength_used=(denoise_override if denoise_override is not None
                                else (0.82 if frame_directive.type == FrameType.KEYFRAME
-                                     else (frame_directive.strength or 0.22)))
+                                     else (frame_directive.strength or 0.45)))
             ))
 
-            # Rate limit courtesy pause
-            time.sleep(0.5)
+            # Rate limit / thermal management pause between frames
+            time.sleep(FRAME_DELAY)
 
     log_progress(progress_job_id, f"[Stage 3 QUALITY] Complete: {len(generated_frames)}/{total_frame_count} frames generated", "success")
 

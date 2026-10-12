@@ -88,11 +88,21 @@ print(f"{'='*60}")
 job_id = f"fast_{uuid.uuid4().hex[:8]}"
 print(f"Job ID: {job_id}")
 
-# Allow override of generation steps for faster testing
+# Allow override of generation params for faster/lower-load testing
 test_steps = int(os.environ.get("TEST_STEPS", "20"))
-gen_params = {"steps": test_steps} if test_steps != 20 else None
-if gen_params:
+test_width = int(os.environ.get("TEST_WIDTH", "0"))
+test_height = int(os.environ.get("TEST_HEIGHT", "0"))
+gen_params = {}
+if test_steps != 20:
+    gen_params["steps"] = test_steps
     print(f"Using reduced steps: {test_steps}")
+if test_width > 0:
+    gen_params["width"] = test_width
+if test_height > 0:
+    gen_params["height"] = test_height
+if test_width > 0 or test_height > 0:
+    print(f"Using custom resolution: {test_width or 768}x{test_height or 768}")
+gen_params = gen_params or None
 
 frame_set = generate_all_frames(
     storyboard=storyboard,

@@ -55,7 +55,8 @@ class CharacterAnchor(BaseModel):
     clothing: str
     body: str
     distinguishing: str
-    full_anchor_text: str       # used verbatim in Fast mode prompts
+    full_anchor_text: str       # full description for reference / Quality mode
+    short_anchor_text: str      # 3-5 word tag injected in Fast mode prompts
     style_anchor: str           # style tokens, also used verbatim
     reference_prompt: str       # for Quality mode reference image generation
 
