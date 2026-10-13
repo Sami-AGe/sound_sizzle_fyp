@@ -1655,7 +1655,7 @@ function showResults(result, testResult = null, jobData = null) {
     document.getElementById('vPlayBig').textContent = '▶';
     document.getElementById('vPlayBtn').textContent  = '▶';
 
-    v.src = `${API_BASE}/download/${result.job_id}`;
+    v.src = `${API_BASE}/stream/${result.job_id}`;
     v.load();
 
     const story = result.story || '';
@@ -1677,8 +1677,12 @@ function showResults(result, testResult = null, jobData = null) {
       ['Provider', provider],
     ].map(([l, v]) => `<div class="stat"><span class="slabel">${l}</span><span class="svalue">${v}</span></div>`).join('');
 
-    document.getElementById('downloadBtn').onclick = () =>
-      window.open(`${API_BASE}/download/${result.job_id}`);
+    document.getElementById('downloadBtn').onclick = () => {
+      const a = document.createElement('a');
+      a.href = `${API_BASE}/download/${result.job_id}`;
+      a.download = `audiostory_${result.job_id}.mp4`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    };
 
     const fill = (job) => {
       if (job.storyboard) document.getElementById('storyboardJson').textContent = JSON.stringify(job.storyboard, null, 2);

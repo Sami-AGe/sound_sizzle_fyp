@@ -198,6 +198,18 @@ def download_video(job_id: str):
     )
 
 
+@app.get("/stream/{job_id}")
+def stream_video(job_id: str):
+    """Streams a completed video for inline playback (no Content-Disposition: attachment)."""
+    video_path = os.path.join(TEMP_DIR, job_id, "output.mp4")
+    if not os.path.exists(video_path):
+        raise HTTPException(404, "Video not found")
+    return FileResponse(
+        video_path,
+        media_type="video/mp4",
+    )
+
+
 @app.get("/jobs/{job_id}")
 def get_job_status(job_id: str):
     """
