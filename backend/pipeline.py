@@ -4,7 +4,7 @@ AudioStory — Pipeline Orchestrator
 Single function that calls all four stages in sequence:
   Stage 1: Audio Analysis (librosa + Whisper)
   Stage 2: Storyboard Generation (Groq LLM)
-  Stage 3: Image Generation (HuggingFace Inference API)
+  Stage 3: Image Generation (ComfyUI local)
   Stage 4: Video Effects + Assembly (OpenCV + MoviePy)
 
 Usage:
@@ -23,7 +23,7 @@ from stages.stage1_audio import analyze_audio
 from stages.stage2_storyboard import generate_storyboard
 from stages.stage3_images import (
     generate_all_frames, save_frameset_metadata,
-    USE_COMFYUI, COMFYUI_MODEL,
+    USE_COMFYUI, COMFYUI_MODEL, TEXT_TO_IMAGE_MODEL,
 )
 from stages.stage4_video import build_video
 from job_manager import update_job, log_progress, is_cancelled
@@ -140,7 +140,9 @@ def run_pipeline(
             style_trigger_word=style["trigger_word"],
             save_path=os.path.join(job_dir, "storyboard.json"),
             max_frames=max_frames,
-            generation_mode=generation_mode
+            generation_mode=generation_mode,
+            style_key=style_key,
+            detected_mood=audio_data.detected_mood,
         )
         t3 = time.time()
         total_frames_in_story = sum(len(s.frames) for s in storyboard.scenes)
@@ -167,7 +169,8 @@ def run_pipeline(
             job_id=job_id,
             output_dir=OUTPUT_DIR,
             progress_job_id=progress_job_id,
-            gen_params=gen_params
+            gen_params=gen_params if gen_params else None,
+            style_key=style_key,
         )
         save_frameset_metadata(frame_set, os.path.join(job_dir, "frameset.json"))
         t5 = time.time()
@@ -189,7 +192,8 @@ def run_pipeline(
             audio_data=audio_data,
             audio_path=audio_path,
             job_id=job_id,
-            output_dir=OUTPUT_DIR
+            output_dir=OUTPUT_DIR,
+            detected_mood=audio_data.detected_mood
         )
         t7 = time.time()
         log_progress(progress_job_id,

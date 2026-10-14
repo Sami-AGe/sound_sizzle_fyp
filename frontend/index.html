@@ -282,6 +282,41 @@
 
     .comfy-body.open { display: block; }
 
+    /* ── Model selector cards ── */
+    .model-selector { margin-bottom: 0.85rem; }
+
+    .model-label {
+      display: block;
+      font-size: 0.72rem;
+      color: var(--text2);
+      margin-bottom: 0.45rem;
+      font-weight: 500;
+    }
+
+    .model-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+      gap: 0.45rem;
+    }
+
+    .model-card {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--r);
+      padding: 0.55rem 0.5rem;
+      cursor: pointer;
+      text-align: center;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .model-card:hover { border-color: var(--border2); background: var(--hover); }
+
+    .model-card.selected { border-color: var(--accent); background: var(--accent-dim); }
+
+    .model-card .m-name { font-weight: 600; font-size: 0.78rem; display: block; color: var(--text); }
+    .model-card .m-notes { font-size: 0.58rem; color: var(--text2); margin-top: 0.15rem; line-height: 1.2; }
+    .model-card .m-default::after { content: ' ★'; font-size: 0.72rem; color: var(--accent); }
+
     .cf-grid {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
@@ -875,14 +910,43 @@
         </div>
       </div>
 
-      <!-- ComfyUI advanced settings -->
+      <!-- ComfyUI model selection + advanced settings -->
       <div class="comfy-panel">
         <button class="comfy-toggle" id="comfyToggle" onclick="toggleComfy()">
-          <span>⚙ ComfyUI settings — steps, resolution, guidance, seed</span>
+          <span>⚙ ComfyUI settings — model, sampler, steps, denoise</span>
           <i class="comfy-arrow">▼</i>
         </button>
         <div class="comfy-body" id="comfyBody">
+          <!-- Model cards -->
+          <div class="model-selector">
+            <label class="model-label">Checkpoint model</label>
+            <div class="model-cards" id="modelCards"></div>
+          </div>
           <div class="cf-grid" style="margin-top:0.85rem;">
+            <div class="cf-field">
+              <label for="cfSampler">Sampler</label>
+              <select id="cfSampler">
+                <option value="euler">Euler</option>
+                <option value="euler_a">Euler a</option>
+                <option value="dpmpp_2m">DPM++ 2M</option>
+                <option value="dmpp_2m_sde">DPM++ 2M SDE</option>
+                <option value="heun">Heun</option>
+                <option value="dpm">DPM (2m)</option>
+                <option value="ddim">DDIM</option>
+                <option value="lms">LMS</option>
+              </select>
+            </div>
+            <div class="cf-field">
+              <label for="cfScheduler">Scheduler</label>
+              <select id="cfScheduler">
+                <option value="normal">Normal</option>
+                <option value="karras">Karras</option>
+                <option value="exponential">Exponential</option>
+                <option value="sgm">SGM</option>
+                <option value="simple">Simple</option>
+                <option value="linear">Linear</option>
+              </select>
+            </div>
             <div class="cf-field">
               <label for="cfSteps">Inference steps</label>
               <input type="number" id="cfSteps" min="4" max="60" value="20">
@@ -892,8 +956,12 @@
               <input type="number" id="cfGuidance" min="1" max="15" step="0.5" value="7.0">
             </div>
             <div class="cf-field">
-              <label for="cfDenoise">Denoise strength</label>
+              <label for="cfDenoise">Denoise (keyframes)</label>
               <input type="number" id="cfDenoise" min="0.05" max="1.0" step="0.05" value="0.75">
+            </div>
+            <div class="cf-field">
+              <label for="cfDenoiseContinuation">Denoise (continuations)</label>
+              <input type="number" id="cfDenoiseContinuation" min="0.05" max="1.0" step="0.05" value="0.45">
             </div>
             <div class="cf-field">
               <label for="cfWidth">Width (px)</label>
@@ -1052,6 +1120,7 @@ let selectedFile     = null;
 let croppedBlob      = null;   // Set when slicer is used
 let generationMode   = 'fast';
 let maxFrames        = 15;
+let selectedModelKey = null;   // ComfyUI checkpoint model key
 let consoleEntries   = [];
 let pollingInterval  = null;
 let lastLogCount     = 0;
@@ -1402,9 +1471,11 @@ function setMode(mode) {
   generationMode = mode;
   document.getElementById('modeFast').classList.toggle('selected', mode === 'fast');
   document.getElementById('modeQuality').classList.toggle('selected', mode === 'quality');
-  // Apply defaults
-  if (mode === 'fast')    { document.getElementById('cfSteps').value = 20; document.getElementById('cfDenoise').value = 0.75; }
-  else                    { document.getElementById('cfSteps').value = 30; document.getElementById('cfDenoise').value = 0.65; }
+  // Apply defaults (only if no model is selected — model selection overrides)
+  if (selectedModelKey === null) {
+    if (mode === 'fast')    { document.getElementById('cfSteps').value = 20; document.getElementById('cfDenoise').value = 0.75; document.getElementById('cfDenoiseContinuation').value = 0.45; }
+    else                    { document.getElementById('cfSteps').value = 30; document.getElementById('cfDenoise').value = 0.65; document.getElementById('cfDenoiseContinuation').value = 0.45; }
+  }
   log(`Mode: ${mode}`, 'info');
 }
 
@@ -1427,6 +1498,25 @@ function selectStyle(key) {
   document.querySelector(`[data-key="${key}"]`)?.classList.add('selected');
   updateReadyState();
   log(`Style: ${key}`, 'info');
+}
+
+function selectModel(key, modelInfo) {
+  selectedModelKey = key;
+  document.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
+  const sel = document.querySelector(`.model-card[data-key="${key}"]`);
+  if (sel) sel.classList.add('selected');
+  // Auto-fill ComfyUI settings from the model's optimal parameters
+  if (modelInfo) {
+    document.getElementById('cfSteps').value    = modelInfo.optimal_steps;
+    document.getElementById('cfGuidance').value  = modelInfo.optimal_guidance;
+    document.getElementById('cfDenoise').value   = modelInfo.optimal_denoise;
+    document.getElementById('cfDenoiseContinuation').value = modelInfo.optimal_denoise_continuation;
+    document.getElementById('cfWidth').value    = modelInfo.optimal_width;
+    document.getElementById('cfHeight').value   = modelInfo.optimal_height;
+    if (modelInfo.optimal_sampler)  document.getElementById('cfSampler').value  = modelInfo.optimal_sampler;
+    if (modelInfo.optimal_scheduler) document.getElementById('cfScheduler').value = modelInfo.optimal_scheduler;
+  }
+  log(`Model: ${modelInfo?.display_name || key}`, 'info');
 }
 
 function updateReadyState() {
@@ -1476,6 +1566,10 @@ async function generateVideo() {
   fd.append('height',   document.getElementById('cfHeight').value);
   fd.append('denoise',  document.getElementById('cfDenoise').value);
   fd.append('seed',     document.getElementById('cfSeed').value);
+  if (selectedModelKey) fd.append('model',    selectedModelKey);
+  fd.append('sampler',   document.getElementById('cfSampler').value);
+  fd.append('scheduler', document.getElementById('cfScheduler').value);
+  fd.append('denoise_continuation', document.getElementById('cfDenoiseContinuation').value);
 
   log(`Submitting job — mode=${generationMode}, frames=${maxFrames}, style=${selectedStyle}`, 'info');
 
@@ -1819,9 +1913,10 @@ async function loadConfig() {
     window.backendConfig = cfg;
     document.getElementById('statusDot').className = 'sdot online';
     document.getElementById('statusText').textContent = cfg.use_comfyui
-      ? `ComfyUI · ${cfg.generation_mode_default}`
+      ? `ComfyUI · ${cfg.comfyui_model_key || cfg.comfyui_model || 'local'}`
       : `HuggingFace · ${cfg.generation_mode_default}`;
-    log(`Backend online — ${cfg.use_comfyui ? 'ComfyUI' : 'HF'} / ${cfg.generation_mode_default}`, 'success');
+    log(`Backend online — ${cfg.use_comfyui ? 'ComfyUI (' + (cfg.comfyui_model_key || 'local') + ')' : 'HF'} / ${cfg.generation_mode_default}`, 'success');
+    await loadModels();
   } catch (e) {
     document.getElementById('statusDot').className = 'sdot offline';
     document.getElementById('statusText').textContent = 'Backend offline';
@@ -1849,6 +1944,31 @@ async function loadStyles() {
   }
 }
 
+async function loadModels() {
+  try {
+    const res = await fetch(`${API_BASE}/models`);
+    if (!res.ok) return;
+    const models = await res.json();
+    const container = document.getElementById('modelCards');
+    if (!container) return;
+    container.innerHTML = '';
+    for (const [key, m] of Object.entries(models)) {
+      const card = document.createElement('div');
+      card.className = 'model-card' + (key === (selectedModelKey || 'meinamix') ? ' selected' : '');
+      card.dataset.key = key;
+      card.innerHTML = `<span class="m-name${key === 'meinamix' ? ' m-default' : ''}">${m.display_name}</span>` +
+                       `<span class="m-notes">${m.notes || ''}</span>`;
+      card.onclick = () => selectModel(key, m);
+      container.appendChild(card);
+    }
+    // Auto-select default if nothing selected yet
+    if (!selectedModelKey) {
+      const defaultEntry = models['meinamix'];
+      if (defaultEntry) selectModel('meinamix', defaultEntry);
+    }
+  } catch (e) { /* ComfyUI may not be running — silently skip */ }
+}
+
 // ════════════════════════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════════════════════════
@@ -1856,6 +1976,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setMode('fast');
   initPlayer();
   loadConfig();
+  loadModels();
   loadStyles();
   document.getElementById('playerWrap').classList.add('paused');
 });

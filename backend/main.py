@@ -3,6 +3,7 @@ AudioStory — FastAPI Backend
 
 Endpoints:
   GET  /styles          — List available visual styles
+  GET  /models          — List available ComfyUI checkpoint models
   POST /generate        — Run the full pipeline (audio → video)
   GET  /download/{job_id} — Download a completed video
   GET  /jobs/{job_id}   — Check job status / metadata
@@ -24,12 +25,14 @@ from fastapi.staticfiles import StaticFiles
 # Add backend directory to Python path so flat imports work
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Load environment variables
+# Load environment variables from project root .env (works regardless of CWD)
 from dotenv import load_dotenv
-load_dotenv()
+_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(_ROOT_DIR, ".env"))
 
 from pipeline import run_pipeline
-from models.lora_registry import LORA_STYLES, get_style, list_styles
+from models.lora_registry import LORA_STYLES, STYLE_LORAS, get_style, list_styles
+from models.comfyui_registry import list_models
 from models.schemas import AudioAnalysisResult
 from stages.stage1_audio import analyze_audio, determine_scene_count
 from stages.stage2_storyboard import generate_storyboard
@@ -63,14 +66,23 @@ def get_styles():
     return list_styles()
 
 
+@app.get("/models")
+def get_models():
+    """Lists all available ComfyUI checkpoint models with optimal generation parameters."""
+    return list_models()
+
+
 @app.get("/config")
 def get_config():
     """Returns the current backend configuration for the frontend to display."""
     from stages.stage3_images import USE_COMFYUI, COMFYUI_MODEL
+    from comfyui_client import COMFYUI_HOST
+    from models.comfyui_registry import default_model_key
     return {
         "use_comfyui": USE_COMFYUI,
-        "comfyui_host": os.environ.get("COMFYUI_HOST", "http://127.0.0.1:8188"),
+        "comfyui_host": os.environ.get("COMFYUI_HOST", COMFYUI_HOST),
         "comfyui_model": COMFYUI_MODEL,
+        "comfyui_model_key": default_model_key,
         "hf_provider": os.environ.get("HF_PROVIDER", "replicate"),
         "text_to_image_model": os.environ.get("TEXT_TO_IMAGE_MODEL", "stabilityai/stable-diffusion-3-medium"),
         "image_to_image_model": os.environ.get("IMAGE_TO_IMAGE_MODEL", "black-forest-labs/FLUX.1-Kontext-dev"),
@@ -92,6 +104,11 @@ async def generate_video(
     height: int = Form(None),      # Image height override
     denoise: float = Form(None),   # Strength/denoise override (Quality mode)
     seed: int = Form(None),        # Seed override (-1 = random)
+    model: str = Form(None),        # ComfyUI checkpoint model key (e.g. "meinamix")
+    sampler: str = Form(None),      # ComfyUI sampler (e.g. "euler", "dpmpp_2m")
+    scheduler: str = Form(None),    # ComfyUI scheduler (e.g. "normal", "karras")
+    denoise_continuation: float = Form(None),  # Denoise for continuation frames (Quality mode)
+    style_key: str = Form("none"),  # LoRA style key (e.g. "none", "mha", "ghibli", "cyberpunk_anime")
 ):
     """
     Runs the complete AudioStory pipeline asynchronously.
@@ -108,8 +125,12 @@ async def generate_video(
     - guidance: Override for guidance scale
     - width: Override for image width
     - height: Override for image height
-    - denoise: Override for img2img denoise/strength (Quality mode)
+    - denoise: Override for img2img denoise/strength (Quality mode, keyframes)
     - seed: Override for generation seed (-1 = random)
+    - model: ComfyUI checkpoint model key (e.g. "meinamix")
+    - sampler: ComfyUI sampler name (e.g. "euler", "dpmpp_2m")
+    - scheduler: ComfyUI scheduler name (e.g. "normal", "karras")
+    - denoise_continuation: Denoise for continuation frames (Quality mode)
 
     Returns:
     - JSON with job_id, status, and configuration (poll /jobs/{job_id} for progress)
@@ -142,6 +163,10 @@ async def generate_video(
     if height is not None: gen_params["height"] = height
     if denoise is not None: gen_params["denoise"] = denoise
     if seed is not None: gen_params["seed"] = seed
+    if model is not None: gen_params["model"] = model
+    if sampler is not None: gen_params["sampler"] = sampler
+    if scheduler is not None: gen_params["scheduler"] = scheduler
+    if denoise_continuation is not None: gen_params["denoise_continuation"] = denoise_continuation
 
     # Create job for progress tracking
     job_id = str(uuid.uuid4())[:8]

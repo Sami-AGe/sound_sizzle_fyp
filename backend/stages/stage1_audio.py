@@ -13,8 +13,12 @@ import numpy as np
 import librosa
 import whisper
 
+from groq import Groq
 from models.schemas import AudioAnalysisResult
 from utils.audio_utils import get_energy_at_time
+
+# Valid mood keys for the MOOD_GRADES registry (stage2/stage4)
+VALID_MOODS = {"melancholic", "energetic", "dark_intense", "euphoric", "tense", "neutral"}
 
 
 # Default model sizes for whisper transcription.
@@ -81,6 +85,45 @@ def segment_energy(rms: list, timestamps: list, duration: float) -> list:
             "energy_label": "high" if avg > 0.6 else "medium" if avg > 0.3 else "low"
         })
     return sections
+
+
+def _detect_mood(transcript: str, tempo: float, avg_energy: float, groq_client) -> str:
+    """
+    Uses Groq LLM to classify the song's mood into one of the MOOD_GRADES keys.
+    Falls back to audio-feature-based detect_mood() when no Groq client is available.
+    """
+    if groq_client is None:
+        # Fallback: map audio-feature moods to MOOD_GRADES keys
+        audio_mood = detect_mood(avg_energy, 0.5, tempo, 0.05)
+        mood_map = {
+            "intense_aggressive": "dark_intense",
+            "energetic_euphoric": "energetic",
+            "uplifting_heroic": "euphoric",
+            "dark_powerful": "dark_intense",
+            "melancholic_lonely": "melancholic",
+            "peaceful_dreamy": "melancholic",
+            "chaotic_anxious": "tense",
+            "neutral_cinematic": "neutral",
+        }
+        return mood_map.get(audio_mood, "neutral")
+
+    prompt = (
+        f"Song lyrics: {transcript[:500]}\n"
+        f"Tempo: {tempo:.0f} BPM, Energy: {'high' if avg_energy > 0.05 else 'low'}\n\n"
+        "Classify mood as one of: melancholic / energetic / dark_intense / euphoric / tense / neutral\n"
+        "Respond with one word only."
+    )
+    try:
+        resp = groq_client.chat.completions.create(
+            model="llama3-8b-8192",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=5,
+            temperature=0.0,
+        )
+        mood = resp.choices[0].message.content.strip().lower().replace("-", "_")
+        return mood if mood in VALID_MOODS else "neutral"
+    except Exception:
+        return "neutral"
 
 
 def analyze_audio(
@@ -162,7 +205,10 @@ def analyze_audio(
 
     # ── Mood Detection ───────────────────────────────────────────────────────
     avg_energy = float(np.mean(rms_normalized))
-    detected_mood = detect_mood(avg_energy, sc_mean, tempo, zcr)
+    # Use Groq-based mood detection if API key available, else fallback to audio features
+    GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+    groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+    detected_mood = _detect_mood(transcript or "", tempo, avg_energy, groq_client)
     print(f"[Stage 1] Mood detected: {detected_mood} (energy={avg_energy:.2f})")
 
     # ── Energy Sections (structural segments) ────────────────────────────────

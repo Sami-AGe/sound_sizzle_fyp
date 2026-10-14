@@ -16,27 +16,34 @@ import time
 import json
 
 from PIL import Image
-from huggingface_hub import InferenceClient
 from comfyui_client import ComfyUIClient, COMFYUI_MODEL
 from job_manager import log_progress, is_cancelled
+from models.comfyui_registry import get_model, default_model_key
+from models.lora_registry import STYLE_LORAS
 from models.schemas import (
     Storyboard, GeneratedFrame, GeneratedFrameSet, FrameType,
 )
 
 # ─────────────────────────────────────────────────────────────────────────
-# Client selection: ComfyUI (local) or HuggingFace Inference API.
-# Controlled by USE_COMFYUI env var. When ComfyUI is active, the
-# ComfyUIClient exposes the same text_to_image()/image_to_image()
-# interface as InferenceClient, so all downstream code is unchanged.
+# Client selection: ComfyUI (local) is now the default and only supported
+# provider. HuggingFace Inference API remains available as a fallback
+# if USE_COMFYUI=false and huggingface_hub is installed.
 # ─────────────────────────────────────────────────────────────────────────
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
-PROVIDER = os.environ.get("HF_PROVIDER", "replicate")
-USE_COMFYUI = os.environ.get("USE_COMFYUI", "false").lower() == "true"
+USE_COMFYUI = os.environ.get("USE_COMFYUI", "true").lower() == "true"
 
 if USE_COMFYUI:
     print("[Stage 3] Using ComfyUI for image generation")
     client = ComfyUIClient()
 else:
+    try:
+        from huggingface_hub import InferenceClient
+    except ImportError:
+        raise ImportError(
+            "huggingface_hub is not installed. Set USE_COMFYUI=true (default) "
+            "or install huggingface_hub to use HuggingFace."
+        )
+    HF_TOKEN = os.environ.get("HF_TOKEN", "")
+    PROVIDER = os.environ.get("HF_PROVIDER", "replicate")
     print("[Stage 3] Using HuggingFace Inference API")
     client = InferenceClient(token=HF_TOKEN, provider=PROVIDER)
 
@@ -123,7 +130,8 @@ def generate_all_frames_fast(
     job_id: str,
     output_dir: str,
     progress_job_id: str = None,
-    gen_params: dict = None
+    gen_params: dict = None,
+    style_key: str = "none"
 ) -> GeneratedFrameSet:
     """
     Fast mode: ALL frames use text_to_image (SD3-Medium).
@@ -136,9 +144,9 @@ def generate_all_frames_fast(
 
     progress_job_id: If set, sends log entries to the job manager for frontend
                      real-time progress display.
-    gen_params: Per-request overrides for steps, guidance_scale, width, height, seed.
-                Falls back to module constants (GEN_STEPS, GUIDANCE_SCALE, etc.)
-                when not provided.
+    gen_params: Per-request overrides for steps, guidance_scale, width, height,
+                denoise, seed, model, sampler, scheduler. Falls back to module
+                constants (GEN_STEPS, GUIDANCE_SCALE, etc.) when not provided.
     """
     # Resolve generation parameters: use overrides if provided, else defaults
     gen_params = gen_params or {}
@@ -147,6 +155,21 @@ def generate_all_frames_fast(
     width = gen_params.get("width", IMAGE_WIDTH)
     height = gen_params.get("height", IMAGE_HEIGHT)
     user_seed_override = gen_params.get("seed", None)  # None or -1 = random
+
+    # ComfyUI-specific overrides
+    model_key = gen_params.get("model", default_model_key)
+    try:
+        model_info = get_model(model_key)
+        ckpt_name = model_info["filename"]
+    except ValueError:
+        ckpt_name = model_key  # Allow raw filename as fallback
+    sampler = gen_params.get("sampler", "euler")
+    scheduler = gen_params.get("scheduler", "normal")
+
+    # LoRA style: look up file + weight from STYLE_LORAS
+    style_info = STYLE_LORAS.get(style_key or "none", STYLE_LORAS["none"])
+    lora_file = style_info.get("lora_file") if USE_COMFYUI else None
+    lora_weight = style_info.get("lora_weight", 0.75)
 
     # Import random lazily to avoid module-level dependency
     import random as _random
@@ -190,16 +213,24 @@ def generate_all_frames_fast(
                 f"({frame_directive.type}) @ seed={frame_seed}", "info")
 
             try:
+                # Prepend LoRA trigger word to prompt for style guidance
+                full_prompt = f"{style_info['trigger_word']}, {resolved_prompt}" if style_info.get("trigger_word") else resolved_prompt
+
                 generated_image = client.text_to_image(
-                    prompt=resolved_prompt,
+                    prompt=full_prompt,
                     model=TEXT_TO_IMAGE_MODEL,
                     negative_prompt=NEGATIVE_PROMPT,
                     width=width,
                     height=height,
                     num_inference_steps=steps,
                     guidance_scale=guidance,
-                    seed=frame_seed      # Locked per scene for visual consistency,
-                                        # or global seed override from frontend
+                    seed=frame_seed,      # Locked per scene for visual consistency,
+                                          # or global seed override from frontend
+                    ckpt_name=ckpt_name,
+                    sampler_name=sampler,
+                    scheduler=scheduler,
+                    lora_file=lora_file,
+                    lora_weight=lora_weight,
                 )
 
                 generated_image.save(frame_path)
@@ -260,7 +291,8 @@ def generate_all_frames_quality(
     job_id: str,
     output_dir: str,
     progress_job_id: str = None,
-    gen_params: dict = None
+    gen_params: dict = None,
+    style_key: str = "none"
 ) -> GeneratedFrameSet:
     """
     Quality mode: Reference image + img2img via FLUX.1-Kontext.
@@ -268,7 +300,8 @@ def generate_all_frames_quality(
 
     progress_job_id: If set, sends log entries to the job manager for frontend
                      real-time progress display.
-    gen_params: Per-request overrides for steps, guidance_scale, width, height, denoise, seed.
+    gen_params: Per-request overrides for steps, guidance_scale, width, height,
+                denoise, denoise_continuation, seed, model, sampler, scheduler.
                 Falls back to module constants (GEN_STEPS, GUIDANCE_SCALE, etc.)
                 when not provided.
     """
@@ -278,8 +311,25 @@ def generate_all_frames_quality(
     guidance = gen_params.get("guidance_scale", GUIDANCE_SCALE)
     width = gen_params.get("width", IMAGE_WIDTH)
     height = gen_params.get("height", IMAGE_HEIGHT)
-    denoise_override = gen_params.get("denoise", None)  # If set, overrides per-frame strength
+    denoise_override = gen_params.get("denoise", None)  # Keyframe img2img strength
+    denoise_continuation = gen_params.get("denoise_continuation", None)  # Continuation strength
     user_seed_override = gen_params.get("seed", None)  # None or -1 = random
+
+    # ComfyUI-specific overrides
+    model_key = gen_params.get("model", default_model_key)
+    try:
+        model_info = get_model(model_key)
+        ckpt_name = model_info["filename"]
+    except ValueError:
+        ckpt_name = model_key  # Allow raw filename as fallback
+    sampler = gen_params.get("sampler", "euler")
+    scheduler = gen_params.get("scheduler", "normal")
+
+    # LoRA style: look up file + weight from STYLE_LORAS
+    style_info = STYLE_LORAS.get(style_key or "none", STYLE_LORAS["none"])
+    lora_file = style_info.get("lora_file") if USE_COMFYUI else None
+    lora_weight = style_info.get("lora_weight", 0.75)
+    style_trigger = style_info.get("trigger_word", style_trigger_word) if style_info.get("trigger_word") else style_trigger_word
 
     import random as _random
 
@@ -292,7 +342,7 @@ def generate_all_frames_quality(
     reference_prompt = storyboard.subject_reference_prompt
     try:
         reference_image = client.text_to_image(
-            prompt=f"{reference_prompt}, {style_trigger_word}, illustration, stylized",
+            prompt=f"{reference_prompt}, {style_trigger}, illustration, stylized",
             model=TEXT_TO_IMAGE_MODEL,
             negative_prompt=NEGATIVE_PROMPT,
             width=width,
@@ -300,6 +350,11 @@ def generate_all_frames_quality(
             num_inference_steps=steps,
             guidance_scale=guidance,
             seed=_random.randint(0, 2**32-1) if not user_seed_override or user_seed_override == -1 else user_seed_override,
+            ckpt_name=ckpt_name,
+            sampler_name=sampler,
+            scheduler=scheduler,
+            lora_file=lora_file,
+            lora_weight=lora_weight,
         )
     except Exception as e:
         log_progress(progress_job_id, f"[Stage 3] ERROR: Reference image failed: {e}", "error")
@@ -340,7 +395,7 @@ def generate_all_frames_quality(
                     # Fresh generation but guided by reference image for consistency
                     full_prompt = (
                         f"{frame_directive.full_prompt}, "
-                        f"{style_trigger_word}, "
+                        f"{style_trigger}, "
                         f"{scene.color_palette}, "
                         f"illustration, stylized"
                     )
@@ -358,6 +413,11 @@ def generate_all_frames_quality(
                         num_inference_steps=steps,
                         guidance_scale=guidance,
                         seed=_random.randint(0, 2**32-1) if not user_seed_override or user_seed_override == -1 else user_seed_override,
+                        ckpt_name=ckpt_name,
+                        sampler_name=sampler,
+                        scheduler=scheduler,
+                        lora_file=lora_file,
+                        lora_weight=lora_weight,
                     )
 
                 elif frame_directive.type == FrameType.CONTINUATION:
@@ -366,10 +426,13 @@ def generate_all_frames_quality(
                         f"{storyboard.subject_description}, "
                         f"{frame_directive.modifier_prompt}, "
                         f"{scene.color_palette}, "
-                        f"{style_trigger_word}"
+                        f"{style_trigger}"
                     )
-                    # Strength 0.45 for continuations (subtle change), or storyboard value, or override
-                    strength = denoise_override if denoise_override is not None else (frame_directive.strength or 0.45)
+                    # Strength for continuations: denoise_continuation if set,
+                    # else denoise_override, else storyboard value, else 0.45
+                    strength = (denoise_continuation if denoise_continuation is not None
+                              else denoise_override if denoise_override is not None
+                              else (frame_directive.strength or 0.45))
 
                     current_image = client.image_to_image(
                         image=previous_image,
@@ -382,12 +445,17 @@ def generate_all_frames_quality(
                         num_inference_steps=steps,
                         guidance_scale=guidance,
                         seed=_random.randint(0, 2**32-1) if not user_seed_override or user_seed_override == -1 else user_seed_override,
+                        ckpt_name=ckpt_name,
+                        sampler_name=sampler,
+                        scheduler=scheduler,
+                        lora_file=lora_file,
+                        lora_weight=lora_weight,
                     )
 
                 else:
                     # Fallback: generate from scratch
                     current_image = client.text_to_image(
-                        prompt=f"{frame_directive.full_prompt or frame_directive.modifier_prompt}, {style_trigger_word}",
+                        prompt=f"{frame_directive.full_prompt or frame_directive.modifier_prompt}, {style_trigger}",
                         model=TEXT_TO_IMAGE_MODEL,
                         negative_prompt=NEGATIVE_PROMPT,
                         width=width,
@@ -395,6 +463,11 @@ def generate_all_frames_quality(
                         num_inference_steps=steps,
                         guidance_scale=guidance,
                         seed=_random.randint(0, 2**32-1) if not user_seed_override or user_seed_override == -1 else user_seed_override,
+                        ckpt_name=ckpt_name,
+                        sampler_name=sampler,
+                        scheduler=scheduler,
+                        lora_file=lora_file,
+                        lora_weight=lora_weight,
                     )
 
                 current_image.save(frame_path)
@@ -427,7 +500,8 @@ def generate_all_frames_quality(
                 prompt_used=(frame_directive.full_prompt or frame_directive.modifier_prompt),
                 strength_used=(denoise_override if denoise_override is not None
                                else (0.82 if frame_directive.type == FrameType.KEYFRAME
-                                     else (frame_directive.strength or 0.45)))
+                                     else (denoise_continuation if denoise_continuation is not None
+                                           else (frame_directive.strength or 0.45))))
             ))
 
             # Rate limit / thermal management pause between frames
@@ -452,7 +526,8 @@ def generate_all_frames(
     job_id: str,
     output_dir: str,
     progress_job_id: str = None,
-    gen_params: dict = None
+    gen_params: dict = None,
+    style_key: str = "none"
 ) -> GeneratedFrameSet:
     """
     Public entry point. Reads generation_mode from storyboard and dispatches
@@ -490,12 +565,12 @@ def generate_all_frames(
     if mode == "quality":
         return generate_all_frames_quality(
             storyboard, style_name, style_trigger_word, job_id, output_dir,
-            progress_job_id, gen_params
+            progress_job_id, gen_params, style_key=style_key
         )
     else:
         return generate_all_frames_fast(
             storyboard, style_name, style_trigger_word, job_id, output_dir,
-            progress_job_id, gen_params
+            progress_job_id, gen_params, style_key=style_key
         )
 
 

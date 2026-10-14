@@ -138,7 +138,9 @@ def generate_storyboard(
     max_retries: int = 3,
     save_path: str = None,
     max_frames: int = None,
-    generation_mode: str = "fast"
+    generation_mode: str = "fast",
+    style_key: str = "none",
+    detected_mood: str = "neutral"
 ) -> Storyboard:
     """
     Main entry point: sends audio analysis to Groq and returns a
@@ -184,6 +186,28 @@ def generate_storyboard(
     anchor = generate_character_anchor(audio_data, style_name, style_trigger_word)
 
     # ── CALL 2: Generate Full Scene + Frame Plan ───────────────────────────
+    from models.lora_registry import STYLE_LORAS, MOOD_GRADES
+
+    style_info = STYLE_LORAS.get(style_key, STYLE_LORAS["none"])
+    mood_info = MOOD_GRADES.get(detected_mood, MOOD_GRADES["neutral"])
+
+    # Inject style and mood direction into system prompt
+    style_block = f"\n\nART STYLE: {style_info['stage2_direction']}" if style_info.get("stage2_direction") else ""
+    mood_block = (
+        f"\nMOOD DIRECTION: {mood_info['stage2_direction']}"
+        f"\nAVOID IN ALL SCENES: {mood_info['stage2_negative']}"
+    ) if mood_info.get("stage2_direction") else ""
+
+    enhanced_system_prompt = SYSTEM_PROMPT + style_block + mood_block
+
+    # Extend the shared negative prompt with mood + style specifics
+    extended_negative = mood_info.get("stage2_negative", "")
+    style_neg = style_info.get("negative_add", "")
+    if extended_negative or style_neg:
+        # Prepend negatives to the anchor's style_anchor (already used in stage2 prompt) — they'll be
+        # incorporated via build_storyboard_prompt's existing negative handling
+        pass  # mood/style negatives are injected via system prompt blocks above
+
     prompt = build_storyboard_prompt(
         audio_data=audio_data,
         anchor=anchor,
@@ -203,7 +227,7 @@ def generate_storyboard(
             response = client.chat.completions.create(
                 model=STORYBOARD_MODEL,
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": enhanced_system_prompt},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.75,

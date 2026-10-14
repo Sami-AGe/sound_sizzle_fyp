@@ -29,12 +29,41 @@ TARGET_FPS = 30
 OUTPUT_RESOLUTION = (1080, 1080)  # 1:1 for TikTok/Instagram
 
 
+def apply_mood_grade(clip, mood_key: str):
+    """
+    Applies a colour grade to a video clip based on the detected mood.
+    Uses MOOD_GRADES parameters (saturation, brightness, color_shift).
+    Returns the graded clip, or the original clip for 'neutral' mood.
+    """
+    from models.lora_registry import MOOD_GRADES
+    grade = MOOD_GRADES.get(mood_key, MOOD_GRADES["neutral"])["grade"]
+    if mood_key == "neutral":
+        return clip
+
+    sat = grade["saturation"]
+    bri = grade["brightness"]
+    cr, cg, cb = grade["color_shift"]
+
+    def grade_frame(frame):
+        f = frame.astype(np.float32) / 255.0 * bri
+        f[:, :, 0] *= cr   # Blue channel (BGR)
+        f[:, :, 1] *= cg   # Green channel
+        f[:, :, 2] *= cb   # Red channel
+        # Saturation adjustment around luminance
+        lum = (0.299 * f[:, :, 2] + 0.587 * f[:, :, 1] + 0.114 * f[:, :, 0])[:, :, np.newaxis]
+        f = lum + (f - lum) * sat
+        return np.clip(f * 255, 0, 255).astype(np.uint8)
+
+    return clip.fl_image(grade_frame)
+
+
 def build_video(
     frame_set: GeneratedFrameSet,
     audio_data: AudioAnalysisResult,
     audio_path: str,
     job_id: str,
-    output_dir: str
+    output_dir: str,
+    detected_mood: str = "neutral"
 ) -> FinalVideo:
     """
     Main entry point: renders every frame with beat-synced effects,
@@ -142,6 +171,12 @@ def build_video(
     audio_duration = min(30.0, audio_data.duration)
     audio = AudioFileClip(audio_path).subclipped(0, audio_duration)
     final_video = final_video.with_audio(audio)
+
+    # Apply mood-based colour grade (Stage 4 final touch)
+    if detected_mood and detected_mood != "neutral":
+        log_msg = f"[Stage 4] Applying mood grade: {detected_mood}"
+        print(log_msg)
+        final_video = apply_mood_grade(final_video, detected_mood)
 
     print(f"[Stage 4] Writing video to: {output_path}")
     final_video.write_videofile(

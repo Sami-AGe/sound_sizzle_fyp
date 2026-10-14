@@ -1,7 +1,8 @@
 """
 ComfyUI Client — wraps the ComfyUI REST API for local image generation.
 
-Exposes the same interface as HuggingFace's InferenceClient:
+Provides the same interface as HuggingFace's InferenceClient so it can be
+used as a drop-in replacement:
   text_to_image(prompt, model=None, negative_prompt=None, width, height,
                 num_inference_steps, guidance_scale, seed, **kwargs)
   image_to_image(image, prompt, model=None, negative_prompt=None,
@@ -24,7 +25,7 @@ import json
 import requests
 from PIL import Image
 
-COMFYUI_HOST = os.environ.get("COMFYUI_HOST", "http://127.0.0.1:8188")
+COMFYUI_HOST = os.environ.get("COMFYUI_HOST", "http://10.40.12.55:8188")
 COMFYUI_MODEL = os.environ.get("COMFYUI_MODEL", "meinmix_v12Final")
 COMFYUI_TIMEOUT = int(os.environ.get("COMFYUI_TIMEOUT", "600"))  # 600s default for CPU/RX580
 COMFYUI_MAX_RETRIES = int(os.environ.get("COMFYUI_MAX_RETRIES", "3"))
@@ -46,12 +47,16 @@ class ComfyUIClient:
         self._check_health()
 
     def _check_health(self):
-        """Verify ComfyUI is running and responsive."""
+        """Verify ComfyUI is running. Logs a warning if unreachable but does not
+        raise — the server must start even when ComfyUI is temporarily down.
+        Actual connection errors during generation are handled by the retry
+        logic in text_to_image() and image_to_image()."""
         try:
-            r = self.session.get(f"{self.host}/view", timeout=5)
+            self.session.get(f"{self.host}/view", timeout=5)
             # /view without params returns 400 or empty, but the host is reachable
         except requests.ConnectionError:
-            raise ConnectionError(f"ComfyUI not reachable at {self.host}")
+            print(f"[ComfyUI] WARNING: ComfyUI not reachable at {self.host} — "
+                  f"will retry on generation")
 
     def submit_prompt(self, workflow: dict) -> str:
         """POST a workflow JSON to ComfyUI. Returns prompt_id."""
@@ -127,13 +132,17 @@ class ComfyUIClient:
         for attempt in range(1, COMFYUI_MAX_RETRIES + 1):
             try:
                 workflow = build_t2i_workflow(
-                    ckpt_name=self.model_name,
+                    ckpt_name=kwargs.get("ckpt_name", self.model_name),
                     positive_prompt=prompt,
                     negative_prompt=negative_prompt or "",
                     width=width, height=height,
                     steps=num_inference_steps,
                     cfg=guidance_scale,
                     seed=seed or 0,
+                    sampler_name=kwargs.get("sampler_name", "euler"),
+                    scheduler=kwargs.get("scheduler", "normal"),
+                    lora_file=kwargs.get("lora_file"),
+                    lora_weight=kwargs.get("lora_weight", 0.75),
                     filename_prefix=f"audiostory_{int(time.time())}_{attempt}"
                 )
                 prompt_id = self.submit_prompt(workflow)
@@ -177,7 +186,7 @@ class ComfyUIClient:
                 self.upload_image(image, fname)
 
                 workflow = build_img2img_workflow(
-                    ckpt_name=self.model_name,
+                    ckpt_name=kwargs.get("ckpt_name", self.model_name),
                     positive_prompt=prompt,
                     negative_prompt=negative_prompt or "",
                     init_image_filename=fname,
@@ -186,6 +195,10 @@ class ComfyUIClient:
                     steps=num_inference_steps,
                     cfg=guidance_scale,
                     seed=seed or 0,
+                    sampler_name=kwargs.get("sampler_name", "euler"),
+                    scheduler=kwargs.get("scheduler", "normal"),
+                    lora_file=kwargs.get("lora_file"),
+                    lora_weight=kwargs.get("lora_weight", 0.75),
                     filename_prefix=f"audiostory_img2img_{timestamp}_{attempt}"
                 )
                 prompt_id = self.submit_prompt(workflow)
@@ -215,9 +228,15 @@ class ComfyUIClient:
 # ─────────────────────────────────────────────────────────────────────────
 
 def build_t2i_workflow(ckpt_name, positive_prompt, negative_prompt,
-                       width, height, steps, cfg, seed, filename_prefix) -> dict:
-    """Builds a ComfyUI text-to-image workflow dict."""
-    return {
+                       width, height, steps, cfg, seed, filename_prefix,
+                       sampler_name="euler", scheduler="normal",
+                       lora_file=None, lora_weight=0.75) -> dict:
+    """Builds a ComfyUI text-to-image workflow dict.
+
+    When lora_file is provided, a LoraLoader node is inserted between the
+    checkpoint loader and the KSampler so the LoRA is applied at inference.
+    """
+    workflow = {
         "1": {"class_type": "CheckpointLoaderSimple",
               "inputs": {"ckpt_name": ckpt_name}},
         "2": {"class_type": "CLIPTextEncode",
@@ -226,24 +245,47 @@ def build_t2i_workflow(ckpt_name, positive_prompt, negative_prompt,
               "inputs": {"clip": ["1", 1], "text": negative_prompt}},
         "4": {"class_type": "EmptyLatentImage",
               "inputs": {"width": width, "height": height, "batch_size": 1}},
-        "5": {"class_type": "KSampler",
-              "inputs": {"model": ["1", 0], "seed": seed, "steps": steps,
-                         "cfg": cfg, "sampler_name": "euler", "scheduler": "normal",
-                         "denoise": 1.0,
-                         "positive": ["2", 0], "negative": ["3", 0],
-                         "latent_image": ["4", 0]}},
-        "6": {"class_type": "VAEDecode",
-              "inputs": {"samples": ["5", 0], "vae": ["1", 2]}},
-        "7": {"class_type": "SaveImage",
-              "inputs": {"images": ["6", 0], "filename_prefix": filename_prefix}}
     }
+
+    if lora_file:
+        workflow["lora_loader"] = {
+            "class_type": "LoraLoader",
+            "inputs": {
+                "model": ["1", 0],
+                "clip": ["1", 1],
+                "lora_name": lora_file,
+                "strength_model": lora_weight,
+                "strength_clip": lora_weight,
+            }
+        }
+        model_source = ["lora_loader", 0]
+    else:
+        model_source = ["1", 0]
+
+    workflow["5"] = {"class_type": "KSampler",
+                     "inputs": {"model": model_source, "seed": seed, "steps": steps,
+                                "cfg": cfg, "sampler_name": sampler_name, "scheduler": scheduler,
+                                "denoise": 1.0,
+                                "positive": ["2", 0], "negative": ["3", 0],
+                                "latent_image": ["4", 0]}}
+    workflow["6"] = {"class_type": "VAEDecode",
+                     "inputs": {"samples": ["5", 0], "vae": ["1", 2]}}
+    workflow["7"] = {"class_type": "SaveImage",
+                     "inputs": {"images": ["6", 0], "filename_prefix": filename_prefix}}
+    return workflow
 
 
 def build_img2img_workflow(ckpt_name, positive_prompt, negative_prompt,
                            init_image_filename, denoise, width, height,
-                           steps, cfg, seed, filename_prefix) -> dict:
-    """Builds a ComfyUI image-to-image workflow dict."""
-    return {
+                           steps, cfg, seed, filename_prefix,
+                           sampler_name="euler", scheduler="normal",
+                           lora_file=None, lora_weight=0.75) -> dict:
+    """Builds a ComfyUI image-to-image workflow dict.
+
+    When lora_file is provided, a LoraLoader node is inserted between the
+    checkpoint loader and the KSampler so the LoRA is applied at inference.
+    """
+    workflow = {
         "1": {"class_type": "CheckpointLoaderSimple",
               "inputs": {"ckpt_name": ckpt_name}},
         "2": {"class_type": "CLIPTextEncode",
@@ -254,14 +296,31 @@ def build_img2img_workflow(ckpt_name, positive_prompt, negative_prompt,
               "inputs": {"image": init_image_filename}},
         "5": {"class_type": "VAEEncode",
               "inputs": {"pixels": ["4", 0], "vae": ["1", 2]}},
-        "6": {"class_type": "KSampler",
-              "inputs": {"model": ["1", 0], "seed": seed, "steps": steps,
-                         "cfg": cfg, "sampler_name": "euler", "scheduler": "normal",
-                         "denoise": denoise,
-                         "positive": ["2", 0], "negative": ["3", 0],
-                         "latent_image": ["5", 0]}},
-        "7": {"class_type": "VAEDecode",
-              "inputs": {"samples": ["6", 0], "vae": ["1", 2]}},
-        "8": {"class_type": "SaveImage",
-              "inputs": {"images": ["7", 0], "filename_prefix": filename_prefix}}
     }
+
+    if lora_file:
+        workflow["lora_loader"] = {
+            "class_type": "LoraLoader",
+            "inputs": {
+                "model": ["1", 0],
+                "clip": ["1", 1],
+                "lora_name": lora_file,
+                "strength_model": lora_weight,
+                "strength_clip": lora_weight,
+            }
+        }
+        model_source = ["lora_loader", 0]
+    else:
+        model_source = ["1", 0]
+
+    workflow["6"] = {"class_type": "KSampler",
+                     "inputs": {"model": model_source, "seed": seed, "steps": steps,
+                                "cfg": cfg, "sampler_name": sampler_name, "scheduler": scheduler,
+                                "denoise": denoise,
+                                "positive": ["2", 0], "negative": ["3", 0],
+                                "latent_image": ["5", 0]}}
+    workflow["7"] = {"class_type": "VAEDecode",
+                     "inputs": {"samples": ["6", 0], "vae": ["1", 2]}}
+    workflow["8"] = {"class_type": "SaveImage",
+                     "inputs": {"images": ["7", 0], "filename_prefix": filename_prefix}}
+    return workflow
