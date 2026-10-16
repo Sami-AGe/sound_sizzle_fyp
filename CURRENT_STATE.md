@@ -85,7 +85,7 @@ Added three optional fields to `AudioAnalysisResult`:
 | Task E2 — Optimal parameter suggestions panel | ✅ DONE — added to `frontend/index.html` |
 | Task F — Fix keyframe/continuation logic | ✅ DONE — Quality mode keyframes use `text_to_image` |
 | Task 5 — Style LoRA + mood system | ✅ DONE — `lora_registry.py` replaced; `stage1_audio.py` mood map updated |
-| Task 6 — Real browser test | ⬜ LAST |
+| Task 6 — Real browser test | ⬜ PENDING — needs RX 580 optimization (reduced steps, 8s cooldown) |
 | Task 7 — Frontend professionalism + audio fixes + slicer preview | ✅ DONE |
 
 ---
