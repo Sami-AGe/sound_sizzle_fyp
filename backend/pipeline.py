@@ -125,7 +125,8 @@ def run_pipeline(
         audio_data = analyze_audio(
             audio_path=audio_path,
             whisper_model_size=whisper_model_size,
-            save_path=os.path.join(job_dir, "audio_data.json")
+            save_path=os.path.join(job_dir, "audio_data.json"),
+            max_frames=max_frames,
         )
         t1 = time.time()
         log_progress(progress_job_id,

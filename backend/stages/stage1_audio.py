@@ -129,7 +129,8 @@ def _detect_mood(transcript: str, tempo: float, avg_energy: float, groq_client) 
 def analyze_audio(
     audio_path: str,
     whisper_model_size: str = WHISPER_MODEL_SIZE,
-    save_path: str = None
+    save_path: str = None,
+    max_frames: int = None
 ) -> AudioAnalysisResult:
     """
     Main entry point: load audio, extract all features, transcribe, and
@@ -143,6 +144,9 @@ def analyze_audio(
         Whisper model size: 'tiny', 'base', 'small', or 'medium'.
     save_path : str, optional
         If provided, saves the result as JSON to this path.
+    max_frames : int, optional
+        Target total frame count. Used to scale unique-moments detection
+        so more distinctive moments are identified for higher frame budgets.
 
     Returns
     -------
@@ -243,8 +247,15 @@ def analyze_audio(
         detected_mood=detected_mood,
         energy_sections=energy_sections,
     )
-    num_scenes = determine_scene_count(_analysis_stub, max_frames=None)
-    detect_unique_moments(_analysis_stub, num_scenes=num_scenes)
+    # Detect extra scenes worth of moments so the storyboard can pick keyframes
+    # from the most distinctive audio points. Pass max_frames so the moment
+    # count scales with the target frame resolution.
+    # Use max(max_frames, 30) so short audio gets enough unique moments even if
+    # max_frames isn't provided yet — Stage 1 runs before Stage 2 knows the
+    # target, so we scale the moment count to the configured MAX_FRAMES env var.
+    _max_frames_eff = max_frames or int(os.environ.get("MAX_FRAMES", "30"))
+    _num_scenes_for_moments = determine_scene_count(_analysis_stub, max_frames=_max_frames_eff)
+    detect_unique_moments(_analysis_stub, num_scenes=_num_scenes_for_moments)
 
     analysis = AudioAnalysisResult(
         duration=duration,
@@ -357,26 +368,30 @@ def detect_unique_moments(
     audio_data.spectral_flux = [float(v) for v in spectral_flux]
 
     # ── Compute novelty score ──────────────────────────────────────────────
-    # Combine normalized energy deviation, spectral flux, and onset proximity
-    mean_energy = float(np.mean(rms_vals)) if rms_vals else 0.0
+    # Combine normalized spectral flux (timbral change), energy deviation
+    # (how far above the LOCAL mean), and onset proximity to identify moments
+    # where the audio genuinely shifts — not just any peak.
     mean_flux = float(np.mean(spectral_flux)) if spectral_flux else 0.0
 
     novelty_scores = []
     for i, t in enumerate(rms_ts):
-        # Energy deviation: how far above the mean is this frame?
-        energy_dev = rms_vals[i] / (mean_energy + 0.01) if mean_energy > 0 else 0.0
-        energy_dev = float(np.clip(energy_dev, 0, 3)) / 3.0  # normalize
+        # Energy deviation: how far above the running mean is this frame?
+        # Use local mean (last 5-10 frames) to catch relative spikes, not just global peaks
+        local_window = rms_vals[max(0, i - 5):i + 1]
+        local_mean = float(np.mean(local_window)) if local_window else 0.0
+        energy_dev = rms_vals[i] / (local_mean + 0.01) if local_mean > 0 else 0.0
+        energy_dev = float(np.clip(energy_dev, 0, 3)) / 3.0  # normalize to 0-1
 
         # Spectral flux: timbral change
         flux_norm = spectral_flux[i] / (mean_flux + 0.01) if mean_flux > 0 else 0.0
         flux_norm = float(np.clip(flux_norm, 0, 3)) / 3.0
 
-        # Onset proximity: is there an onset nearby?
-        onset_near = any(abs(t - o) < 0.1 for o in onset_times)
+        # Onset proximity: is there an onset nearby? (strong indicator of a hit/drop)
+        onset_near = any(abs(t - o) < 0.15 for o in onset_times)
         onset_score = 1.0 if onset_near else 0.0
 
         # Combine — flux and energy deviation weighted equally, onset as boost
-        score = 0.4 * flux_norm + 0.4 * energy_dev + 0.2 * onset_score
+        score = 0.35 * flux_norm + 0.35 * energy_dev + 0.30 * onset_score
         novelty_scores.append(float(score))
 
     audio_data.novelty_scores = novelty_scores
@@ -386,22 +401,69 @@ def detect_unique_moments(
         peaks = []
     else:
         min_dist = max(3, int(0.3 * len(rms_ts) / audio_data.duration)) if audio_data.duration > 0 else 3
-        min_prominence = 0.1
+        # Raise prominence to avoid catching noise-level peaks
+        min_prominence = 0.15
         peaks, _ = _scipy_find_peaks(
             novelty_scores,
             distance=min_dist,
             prominence=min_prominence,
         )
 
-    # ── Rank peaks and select top N ────────────────────────────────────────
-    target_count = num_scenes + 2
+    # ── Select unique moments with precedence-based flow control ────────────
+    # Goal: return enough candidate timestamps for keyframe placement that:
+    #   1. They are the most "unique" (highest novelty score)
+    #   2. They are well-spread across the audio timeline (no clustering)
+    #   3. The count adapts to both num_scenes and audio complexity
+    #
+    # Precedence when there are too many peaks:
+    #   - Cluster peaks within a time window (min_scene_gap ~ duration / num_scenes / 2)
+    #   - From each cluster, keep only the highest-scoring peak
+    #   - This prevents multiple keyframes from landing in the same audio segment
+    #     which would disrupt visual flow with too-frequent cuts.
+    #
+    # Precedence when there are too few peaks:
+    #   - Fall back to beat-aligned timestamps, prioritizing onsets
+    #   - Spread them evenly across the duration so scenes still have keyframes
+
+    target_count = max(num_scenes * 2, 5)
+
     if len(peaks) > 0:
-        peak_scores = [(novelty_scores[p], p) for p in peaks]
-        peak_scores.sort(reverse=True)
-        selected_peaks = [p for _, p in peak_scores[:target_count]]
-        selected_peaks.sort()  # time-ordered
+        # Build (score, index, timestamp) tuples and sort by score descending
+        peak_data = [(novelty_scores[p], p, float(rms_ts[p])) for p in peaks]
+
+        # Cluster nearby peaks: group peaks within min_scene_gap seconds of each other
+        min_scene_gap = audio_data.duration / (num_scenes * 2) if num_scenes > 0 else 5.0
+        min_scene_gap = max(min_scene_gap, 3.0)  # At least 3s between cluster centers
+
+        clustered_peaks = []
+        for score, idx, ts in peak_data:
+            # Find if this peak falls within min_scene_gap of any existing cluster center
+            placed = False
+            for cluster in clustered_peaks:
+                if abs(ts - cluster["center_ts"]) < min_scene_gap:
+                    # This peak is close to an existing cluster — keep the higher-scoring one
+                    if score > cluster["best_score"]:
+                        cluster["best_score"] = score
+                        cluster["best_idx"] = idx
+                        cluster["best_ts"] = ts
+                    cluster["center_ts"] = (cluster["center_ts"] * cluster["count"] + ts) / (cluster["count"] + 1)
+                    cluster["count"] += 1
+                    placed = True
+                    break
+            if not placed:
+                clustered_peaks.append({
+                    "best_score": score, "best_idx": idx, "best_ts": ts,
+                    "center_ts": ts, "count": 1
+                })
+
+        # Sort clusters by best score, take top target_count
+        clustered_peaks.sort(key=lambda c: c["best_score"], reverse=True)
+        selected_clusters = clustered_peaks[:target_count]
+        # Sort back by time for chronological order
+        selected_clusters.sort(key=lambda c: c["best_ts"])
+        selected_peaks = [c["best_idx"] for c in selected_clusters]
     else:
-        # Fallback: evenly-spaced beats
+        # Fallback: evenly-spaced beats, prioritizing onsets
         n_beats = len(audio_data.beat_times)
         if n_beats >= target_count:
             step = n_beats // target_count

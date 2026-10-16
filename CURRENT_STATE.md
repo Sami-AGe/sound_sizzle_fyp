@@ -1,4 +1,9 @@
 # AUDIOSTORY — CURRENT_STATE.md
+# v31 (2026-10-16) — Precedence-based unique moment clustering, frame distribution fix, startup diagnostics
+## Fix 1 — Unique moments with clustering (stage1_audio.py)
+## Fix 2 — Frame distribution padded to target (stage2_storyboard.py)
+## Fix 3 — Startup log confirms FRAME_DELAY (main.py, stage3_images.py)
+
 # v30 (2026-10-16) — Unique moment keyframe detection, simplified visual language, FRAME_DELAY=8.0
 # v29 (2026-10-16) — Bug 15+16 fixes, Stage 3 verified, Tasks 1-5/A-F complete
 # v27 (2026-10-16) — Tasks A–F, D, E1, E2 complete. Keyframes use text_to_image. Prompt order fixed.
@@ -7,9 +12,96 @@
 
 ---
 
-## ✨ v30 — Unique Moment Keyframe Detection + Visual Language Fixes
+## ✨ v31 — Precedence-Based Keyframe Placement + Frame Count + FRAME_DELAY Diagnostics
 
-### Problem Summary (from user test feedback)
+### Problem Summary
+
+Three critical bugs reported after v30:
+
+1. **FRAME_DELAY not applied**: User started the server before updating `.env` to `FRAME_DELAY=8.0`. While the runtime code correctly reads `os.environ` fresh each frame, there was no startup confirmation that the value was loaded — making diagnosis impossible.
+2. **Unique moments inconsistent**: `detect_unique_moments()` was called twice with different `max_frames` parameters, causing inconsistency. The novelty score used global mean energy (not local), missing relative spikes. Peaks were selected purely by score with no spatial spreading consideration, so multiple keyframes could cluster in the same audio region.
+3. **Only 15 frames generated (not 30)**: `_enforce_frame_distribution()` only padded scenes with fewer than 3 frames. Scenes with 3+ but still below `target_per_scene` were left short, so if the LLM produced 15 frames across 3 scenes (5 per scene) but `target_per_scene` was 10, no frames were added.
+
+### Fix 1 — Startup FRAME_DELAY confirmation (`main.py`, `stage3_images.py`)
+
+**File:** `backend/main.py`
+- After `load_dotenv()`, added print statements confirming `FRAME_DELAY` and `MAX_FRAMES` values
+- These run at server startup, so the user can immediately see if the `.env` was loaded correctly
+
+**File:** `backend/stages/stage3_images.py` (line ~73)
+- Added startup log line: `FRAME_DELAY = 8.0s — re-read fresh from env each frame; restart server if you change .env`
+- This confirms the module-level constant is 8.0 and documents the restart requirement
+
+**Note:** The per-frame FRAME_DELAY reading code was already correct (`os.environ.get("FRAME_DELAY", str(FRAME_DELAY))` on each iteration). The issue was purely diagnostic — the user needed visibility into whether the env was loaded.
+
+### Fix 2 — Precedence-based unique moment clustering (`stage1_audio.py`)
+
+**File:** `backend/stages/stage1_audio.py`
+
+#### 2a. Pass max_frames through Stage 1 (`analyze_audio`)
+
+Added `max_frames: int = None` parameter to `analyze_audio()`. The function now:
+- Uses `max_frames` (or falls back to `MAX_FRAMES` env var) when calling `determine_scene_count()`
+- This ensures the correct number of scenes is computed BEFORE unique moments detection
+- Previously: `determine_scene_count(_analysis_stub, max_frames=None)` always returned 3
+- Now: `determine_scene_count(_analysis_stub, max_frames=_max_frames_eff)` returns 3-5 based on audio features scaled to frame budget
+
+#### 2b. Local energy deviation in novelty score
+
+Changed the novelty score computation:
+- **Before:** `energy_dev = rms_vals[i] / (mean_energy + 0.01)` — compared to global mean
+- **After:** Uses `local_mean` (mean of last 5 frames) — catches relative spikes
+  ```python
+  local_window = rms_vals[max(0, i - 5):i + 1]
+  local_mean = float(np.mean(local_window)) if local_window else 0.0
+  energy_dev = rms_vals[i] / (local_mean + 0.01) if local_mean > 0 else 0.0
+  ```
+- This means a sudden energy spike in a quiet section gets flagged, not just sustained high energy
+
+#### 2c. Precedence-based peak clustering
+
+Rewrote the peak selection logic with a **clustering approach**:
+
+1. **Detect all peaks** using `scipy.signal.find_peaks` with `distance` and `prominence=0.15`
+2. **Cluster nearby peaks**: Calculate `min_scene_gap = max(duration / (num_scenes * 2), 3.0)` seconds. Group peaks within this gap into clusters.
+3. **Within each cluster**, keep only the highest-scoring peak (preserving spatial spread)
+4. **Select top N** clusters by score: `target_count = max(num_scenes * 2, 5)`
+5. **Sort chronologically** for final output
+
+This implements your precedence requirement:
+- **Too many unique instances** → cluster nearby peaks, keep the best from each cluster (no clustering in same audio segment)
+- **Too few unique instances** → fall back to evenly-spaced beats
+- **Flow preservation** → clusters enforce minimum time gaps between keyframes
+
+#### 2d. Remove duplicate detection in Stage 2
+
+**File:** `backend/stages/stage2_storyboard.py` (lines 178-192)
+
+- Removed the duplicate `detect_unique_moments()` call
+- Now uses `audio_data.unique_moments` computed in Stage 1 (already with correct `max_frames`)
+- Falls back to fresh detection only if `audio_data.unique_moments` is empty (cached/old data)
+
+### Fix 3 — Frame distribution padding (`stage2_storyboard.py`)
+
+**File:** `backend/stages/stage2_storyboard.py` (`_enforce_frame_distribution()`)
+
+**Root cause:** The original code only added frames when `len(scene.frames) < 3`. For a 30-frame target with 3 scenes, `target_per_scene = 10`. If the LLM produced 5 frames per scene (15 total), each scene had ≥3 frames so NO padding occurred.
+
+**Fix:** Changed the loop to add `target_per_scene - len(scene.frames)` frames to EVERY scene that hasn't reached the target:
+
+```python
+for scene in storyboard.scenes:
+    frames_needed = target_per_scene - len(scene.frames)
+    if frames_needed <= 0:
+        continue  # Scene already has enough frames
+    # Add frames_needed continuations...
+```
+
+Verified with test: 9 frames → 30 frames (correctly padded).
+
+---
+
+## ✨ v30 — Unique Moment Keyframe Detection + Visual Language Fixes
 1. Storyboard generates 1 frame per time segment → slideshow pacing, not video-like
 2. Storyboard directions use ambiguous words ("dynamic", "diagonal compositions") the image generator can't follow
 3. FRAME_DELAY inconsistent — `.env.example` had 0.5s, code default was 8.0s

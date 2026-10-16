@@ -70,7 +70,11 @@ GUIDANCE_SCALE = 7.5
 
 # Inter-frame delay for GPU thermal management (especially ComfyUI on CPU/RX580).
 # Increase when frames are generated back-to-back and the GPU heats up.
+# NOTE: This is the fallback default. The actual delay is read fresh from the
+# environment on each iteration in both fast and quality generation loops.
+# Ensure the server is started AFTER .env is updated for changes to take effect.
 FRAME_DELAY = float(os.environ.get("FRAME_DELAY", "8.0"))
+print(f"[Stage 3] FRAME_DELAY = {FRAME_DELAY}s — re-read fresh from env each frame; restart server if you change .env")
 
 
 def build_negative_prompt() -> str:

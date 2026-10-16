@@ -30,6 +30,12 @@ from dotenv import load_dotenv
 _ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(_ROOT_DIR, ".env"))
 
+# Print key configuration at startup so users can verify env loaded correctly
+_frame_delay = float(os.environ.get("FRAME_DELAY", "8.0"))
+_max_frames = os.environ.get("MAX_FRAMES", "30")
+print(f"[Config] FRAME_DELAY = {_frame_delay}s (restart server after changing .env)")
+print(f"[Config] MAX_FRAMES = {_max_frames}")
+
 from pipeline import run_pipeline
 from models.lora_registry import LORA_STYLES, STYLE_LORAS, get_style, list_styles
 from models.comfyui_registry import list_models

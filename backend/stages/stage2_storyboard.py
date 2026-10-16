@@ -175,14 +175,21 @@ def generate_storyboard(
     Storyboard
         Structured visual plan with scenes and frame-by-frame directives.
     """
-    from stages.stage1_audio import determine_scene_count, detect_unique_moments
+    from stages.stage1_audio import determine_scene_count
 
     num_scenes = determine_scene_count(audio_data, max_frames=max_frames)
 
-    # ── Detect unique moments for keyframe placement ────────────────────────
-    unique_moments = detect_unique_moments(audio_data, num_scenes=num_scenes)
+    # ── Use unique moments detected in Stage 1 ──────────────────────────────
+    # detect_unique_moments was already called in analyze_audio() with the same
+    # max_frames, so audio_data.unique_moments should be populated. Fall back
+    # to a fresh detection only if Stage 1 didn't compute them (e.g. cached
+    # audio_data.json from an older run).
+    unique_moments = audio_data.unique_moments if audio_data.unique_moments else []
+    if not unique_moments:
+        from stages.stage1_audio import detect_unique_moments
+        unique_moments = detect_unique_moments(audio_data, num_scenes=num_scenes)
     if unique_moments:
-        print(f"[Stage 2] Detected {len(unique_moments)} unique moments for keyframe placement")
+        print(f"[Stage 2] Using {len(unique_moments)} unique moments from Stage 1 for keyframe placement")
 
     # ── CALL 1: Generate Character + Style Anchor ──────────────────────────
     # This is a small focused call (~200 tokens). It extracts a locked
@@ -493,37 +500,45 @@ def _enforce_frame_distribution(storyboard, max_frames: int, unique_moments: lis
         _rebalance_frame_timestamps(storyboard, audio_data)
         return
 
-    # Duplicate continuation frames to reach the target
-    frames_to_add_per_scene = target_per_scene - 2  # 1 KF + 2 CONT minimum
+    # Add continuation frames to bring each scene up to target_per_scene.
+    # The LLM may produce fewer frames than requested; this guarantees
+    # each scene reaches the target so the final frame count matches max_frames.
     next_frame_id = max(f.frame_id for s in storyboard.scenes for f in s.frames) + 1
 
     for scene in storyboard.scenes:
-        if len(scene.frames) < 3:
-            # Need to add continuations after the keyframe
-            kf = scene.frames[0]
-            scene_end = scene.end_time
-            scene_duration = scene_end - scene.start_time
-            cont_timestamps = []
+        frames_needed = target_per_scene - len(scene.frames)
+        if frames_needed <= 0:
+            continue  # Scene already has enough frames
 
-            # Spread continuations evenly after the keyframe
-            for i in range(1, frames_to_add_per_scene + 1):
-                offset = (scene_duration / (frames_to_add_per_scene + 1)) * i
-                cont_timestamps.append(kf.timestamp + offset)
+        # Duplicate the keyframe as the basis for continuation frames.
+        kf = scene.frames[0]
+        scene_end = scene.end_time
 
-            for ct in cont_timestamps:
-                if ct > scene_end:
-                    break
-                new_frame = FrameDirective(
-                    frame_id=next_frame_id,
-                    timestamp=ct,
-                    type=FrameType.CONTINUATION,
-                    hold_duration=None,
-                    modifier_prompt=kf.full_prompt or "character holds position, subtle expression shift",
-                    strength=0.35,
-                    what_changes="character holds position briefly",
-                )
-                scene.frames.append(new_frame)
-                next_frame_id += 1
+        # Determine keyframe timestamp (snap to unique moment if available)
+        kf_ts = kf.timestamp
+
+        # Spread continuation timestamps evenly between keyframe and scene end
+        for i in range(1, frames_needed + 1):
+            # Evenly distribute from just after keyframe to scene end
+            fractional = i / (frames_needed + 1)
+            ct = kf_ts + fractional * (scene_end - kf_ts)
+            if ct > scene_end:
+                ct = scene_end - 0.01 * i  # nudge back inside bounds
+
+            # Base the continuation on the keyframe's content for consistency
+            base_prompt = kf.full_prompt or kf.modifier_prompt or "character in scene, subtle motion"
+
+            new_frame = FrameDirective(
+                frame_id=next_frame_id,
+                timestamp=round(ct, 2),
+                type=FrameType.CONTINUATION,
+                hold_duration=None,
+                modifier_prompt=base_prompt,
+                strength=0.35,
+                what_changes="continuation of keyframe composition",
+            )
+            scene.frames.append(new_frame)
+            next_frame_id += 1
 
     # Rebalance timestamps to fit within scene boundaries
     _rebalance_frame_timestamps(storyboard, audio_data)
