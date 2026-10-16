@@ -21,17 +21,22 @@ Since there is no img2img, YOU are responsible for visual consistency.
 The image model cannot see previous frames. YOU must describe them in text.
 
 Rules for KEYFRAME prompts:
-- Use the literal token {{character_anchor}} at the START of full_prompt
+- PROMPT ORDER — CRITICAL: Every full_prompt MUST follow this exact order:
+  1. ENVIRONMENT first (scene setting, location, atmosphere, 10-15 words)
+  2. LIGHTING (5 words): time of day, light quality
+  3. STYLE TOKENS (5 words): art style, medium
+  4. {{character_anchor}} token LAST
 - Describe setting, lighting, camera, pose in full detail
-- End with {{style_anchor}}
+- End with {{character_anchor}} (NOT {{style_anchor}} — that is redundant with style_trigger)
+- DO NOT begin full_prompt with hair, eyes, clothing, or any character physical description
 - Set visual_state: describe ALL visual elements that will persist through this scene's continuations
 
 Rules for CONTINUATION prompts:
-- Use the literal token {{character_anchor}} at the START of full_prompt
-- Re-state EVERY persistent element from visual_state using "same [element]" language
-  Example: "same dark alley, same cold blue side lighting, same medium shot"
+- Start with "same [element]" for EVERY persistent element from visual_state
+  Example: "same dark rain-slicked alley, same cold blue side lighting, same medium shot"
 - Then describe what changes in this frame
-- End with {{style_anchor}}
+- End with {{character_anchor}} last
+  Example: "same dark rain-slicked alley, rain intensifying, fists beginning to clench, {{character_anchor}}"
 - NO modifier_prompt field — only full_prompt
 - NO strength field — not applicable
 
@@ -42,7 +47,7 @@ The locked style anchor is:
 {style_anchor}
 
 Example CONTINUATION prompt:
-"{{character_anchor}}, same dark rain-slicked alley, same cold blue side lighting, same medium shot angle, rain intensifying around character, fists beginning to clench, {{style_anchor}}"
+"same dark rain-slicked alley, same cold blue side lighting, same medium shot angle, rain intensifying around character, fists beginning to clench, {{character_anchor}}"
 """
 
 QUALITY_MODE_FRAME_INSTRUCTIONS = """
@@ -51,8 +56,15 @@ GENERATION MODE: QUALITY (img2img)
 img2img handles visual inheritance via pixels. Your job per frame is lightweight.
 
 Rules for KEYFRAME prompts:
-- full_prompt: complete detailed generation prompt including character description, setting, lighting, camera, style tags
+- PROMPT ORDER — CRITICAL: full_prompt MUST follow this exact order:
+  1. ENVIRONMENT first (scene setting, location, atmosphere, 10-15 words)
+  2. LIGHTING (5 words): time of day, light quality
+  3. STYLE TOKENS (5 words): art style, medium
+  4. {{character_anchor}} token LAST (do not write character description inline —
+    it is injected programmatically from the locked anchor)
+- DO NOT begin full_prompt with hair, eyes, clothing, or any character physical description
 - subject_pose, camera_angle, lighting as separate fields
+- The keyframe is a fresh text_to_image — it establishes a brand-new scene
 
 Rules for CONTINUATION prompts:
 - modifier_prompt: SHORT description of ONLY what changes from the previous frame
@@ -82,6 +94,7 @@ FAST_MODE_JSON_SCHEMA = '''
     "body": "...",
     "distinguishing": "...",
     "full_anchor_text": "...",
+    "short_anchor_text": "3-5 word identity tag, e.g. 'green-haired hero, energy powers'",
     "style_anchor": "...",
     "reference_prompt": "..."
   },
@@ -108,7 +121,7 @@ FAST_MODE_JSON_SCHEMA = '''
           "frame_id": 1,
           "timestamp": 0.0,
           "type": "KEYFRAME",
-          "full_prompt": "{{character_anchor}}, scene description, {{style_anchor}}",
+          "full_prompt": "scene description, {{style_anchor}}, {{character_anchor}}",
           "visual_state": "all persistent elements that continue into next frames",
           "subject_pose": "how character is positioned",
           "camera_angle": "wide shot or closeup etc",
@@ -119,7 +132,7 @@ FAST_MODE_JSON_SCHEMA = '''
           "frame_id": 2,
           "timestamp": 0.5,
           "type": "CONTINUATION",
-          "full_prompt": "{{character_anchor}}, same [persistent elements], [what changes], {{style_anchor}}",
+          "full_prompt": "same [persistent elements], [what changes], {{character_anchor}}",
           "what_changes": "what changed in this frame"
         }
       ]
@@ -150,7 +163,7 @@ QUALITY_MODE_JSON_SCHEMA = '''
           "frame_id": 1,
           "timestamp": 0.0,
           "type": "KEYFRAME",
-          "full_prompt": "complete detailed generation prompt",
+          "full_prompt": "ENVIRONMENT first, lighting, style, then {{character_anchor}} — see prompt order rules above",
           "subject_pose": "how character is positioned",
           "camera_angle": "camera angle description",
           "lighting": "lighting description",
@@ -236,7 +249,7 @@ Duration: {audio_data.duration:.1f}s
 Tempo: {audio_data.tempo:.1f} BPM
 Overall mood: {audio_data.detected_mood}
 Tonal brightness: {"bright and energetic" if audio_data.spectral_centroid_mean > 0.5 else "dark and heavy"}
-Lyrics: {audio_data.transcript or "instrumental — no lyrics"}
+Lyrics: {(audio_data.transcript or "instrumental — no lyrics")[:300]}
 
 Energy sections:
 {energy_sections}

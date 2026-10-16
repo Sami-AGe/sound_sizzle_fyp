@@ -52,8 +52,9 @@
       border-bottom: 1px solid var(--border);
     }
 
-    .logo { font-size: 1.35rem; font-weight: 600; letter-spacing: -0.02em; }
-    .logo-mark { color: var(--accent); margin-right: 0.3rem; }
+    .logo { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.03em; }
+    .logo-mark { color: var(--accent); margin-right: 0.35rem; }
+    .logo-mark::before { content: "◆"; display: inline-block; transform: rotate(45deg) scale(1.15); }
     .tagline { color: var(--text2); font-size: 0.82rem; margin-top: 0.2rem; }
 
     .backend-pill {
@@ -120,13 +121,17 @@
     }
 
     .upload-zone:hover { border-color: var(--accent); background: var(--accent-dim); }
-    .upload-zone.has-file { border-color: var(--green); border-style: solid; background: rgba(54,216,142,0.04); }
+    .upload-zone.has-file { border-color: var(--green); border-style: solid; background: rgba(54,216,142,0.04); padding: 1rem 1.5rem; }
     .upload-zone.dragover { border-color: var(--accent); background: var(--accent-dim); }
 
-    .upload-icon { font-size: 2rem; display: block; margin-bottom: 0.5rem; }
+    .upload-icon { display: block; margin-bottom: 0.6rem; opacity: 0.6; }
+    .upload-zone.has-file .upload-icon { display: none; }
     #uploadText { font-size: 0.9rem; }
+    .upload-zone.has-file #uploadText { font-size: 0.78rem; }
     .upload-hint { font-size: 0.75rem; color: var(--text3); margin-top: 0.3rem; }
+    .upload-zone.has-file .upload-hint { display: none; }
     #fileInfo { margin-top: 0.55rem; font-size: 0.82rem; font-weight: 500; }
+    .upload-zone.has-file #fileInfo { margin-top: 0; }
     #fileInfo.ok   { color: var(--green); }
     #fileInfo.warn { color: var(--orange); }
 
@@ -316,6 +321,23 @@
     .model-card .m-name { font-weight: 600; font-size: 0.78rem; display: block; color: var(--text); }
     .model-card .m-notes { font-size: 0.58rem; color: var(--text2); margin-top: 0.15rem; line-height: 1.2; }
     .model-card .m-default::after { content: ' ★'; font-size: 0.72rem; color: var(--accent); }
+
+    .model-suggestions {
+      background: var(--raised);
+      border: 1px solid var(--accent);
+      border-radius: var(--r);
+      padding: 0.75rem 1rem;
+      margin-top: 0.65rem;
+      font-size: 0.8rem;
+    }
+    .suggestion-label { color: var(--accent); font-weight: 600; margin-bottom: 0.35rem; }
+    .suggestion-values { color: var(--text); line-height: 1.8; }
+    .suggestion-notes {
+      color: var(--orange);
+      font-size: 0.73rem;
+      margin-top: 0.35rem;
+      font-style: italic;
+    }
 
     .cf-grid {
       display: grid;
@@ -812,6 +834,7 @@
     .cline.warn    { color: var(--orange); }
 
     /* ── Responsive ── */
+    /* ── Responsive ── */
     @media (max-width: 640px) {
       body { padding: 1.25rem 1rem 4rem; }
       .mode-toggle     { grid-template-columns: 1fr; }
@@ -856,7 +879,7 @@
            ondragover="handleDragOver(event)"
            ondragleave="handleDragLeave(event)"
            onclick="document.getElementById('audioInput').click()">
-        <span class="upload-icon">🎵</span>
+        <svg class="upload-icon" id="uploadIcon" viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v9a3 3 0 1 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M6 10v3a6 6 0 1 0 12 0v-3"/><path d="M8 18h8v2a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2z"/></svg>
         <span id="uploadText">Click or drag an audio file here</span>
         <div class="upload-hint">MP3 · WAV · M4A · OGG — if longer than 30s you can slice it below</div>
         <div id="fileInfo"></div>
@@ -865,7 +888,7 @@
 
       <!-- Slicer — appears only when file > 30s -->
       <div class="slicer-panel" id="slicerPanel" style="display:none">
-        <div class="slicer-label">✂️ Drag the highlighted region to pick your 30-second window</div>
+        <div class="slicer-label"><svg class="icon" viewBox="0 0 24 24" style="width:0.9em;height:0.9em;margin-right:0.3rem;vertical-align:-0.1em"><path d="M19.4 12c0-.84-.13-1.64-.36-2.4l1.96-1.52a.5.5 0 00-.33-.87l-2.34.92c-.5-.92-1.16-1.75-1.97-2.44L15.8 7.8a.5.5 0 00-.66-.16l-.1.05A5.99 5.99 0 0015 7c-.55 0-1.06-.15-1.5-.41l-.1-.05.04-.13a.5.5 0 00-.18-.61l1.96-1.52a.5.5 0 00-.33-.87l-2.34.92c-.5-.92-1.16-1.75-1.97-2.44L8.3 1.6a.5.5 0 00-.66.16c-.03.06-.05.13-.04.2v.01c.23.84.37 1.7.37 2.59 0 3.87-3.13 7-7 7-.89 0-1.75-.14-2.59-.37a.5.5 0 00-.61.66l1.52 1.97a5.99 5.99 0 000 2.4l-1.96 1.52a.5.5 0 00.33.87l2.34-.92c.5.92 1.16 1.75 1.97 2.44l.15.08a.5.5 0 00.66-.16l1.52-1.96.01.02c.84.23 1.7.37 2.59.37 3.87 0 7-3.13 7-7z"/></svg>Drag the highlighted region to pick your 30-second window</div>
         <div class="wave-wrap">
           <canvas id="waveCanvas" height="72"></canvas>
         </div>
@@ -873,6 +896,12 @@
           <span id="sliceStartLabel">0:00</span>
           <span class="sel-badge" id="sliceSelBadge">0:00 → 0:30 selected</span>
           <span id="sliceEndLabel">0:30</span>
+          <button class="btn btn-ghost" id="previewSliceBtn" onclick="previewSlice()" style="font-size:0.75rem;padding:0.3rem 0.7rem;" disabled>
+            <svg class="icon" viewBox="0 0 24 24" style="width:0.95em;height:0.95em;margin-right:0.25rem;vertical-align:-0.1em"><path d="M5 5v14l10-7z" fill="currentColor"/></svg>Preview slice
+          </button>
+          <button class="btn btn-danger" id="stopPreviewBtn" onclick="stopSlicePreview()" style="font-size:0.75rem;padding:0.3rem 0.7rem;display:none">
+            <svg class="icon" viewBox="0 0 24 24" style="width:0.8em;height:0.8em"><path d="M5 5h14v14H5z" fill="currentColor"/></svg>Stop
+          </button>
         </div>
       </div>
     </div>
@@ -913,8 +942,8 @@
       <!-- ComfyUI model selection + advanced settings -->
       <div class="comfy-panel">
         <button class="comfy-toggle" id="comfyToggle" onclick="toggleComfy()">
-          <span>⚙ ComfyUI settings — model, sampler, steps, denoise</span>
-          <i class="comfy-arrow">▼</i>
+          <span><svg class="icon" viewBox="0 0 24 24" style="width:1em;height:1em;margin-right:0.4rem;vertical-align:-0.1em"><path d="M12 8a4 4 0 100 8 4 4 0 000-8zM19.4 13a7.5 7.5 0 000-2l2-1.5a.5.5 0 00-.3-.9l-2.2.9a7.5 7.5 0 00-1.7-1l-.3-2.3a.5.5 0 00-.5-.4h-4a.5.5 0 00-.5.4l-.3 2.3a7.5 7.5 0 00-1.7 1l-2.2-.9a.5.5 0 00-.7.5l2 1.5a7.5 7.5 0 000 2l-2 1.5a.5.5 0 00.3.9l2.2-.9a7.5 7.5 0 001.7 1l.3 2.3a.5.5 0 00.5.4h4a.5.5 0 00.5-.4l.3-2.3a7.5 7.5 0 001.7-1l2.2.9a.5.5 0 00.7-.5l-2-1.5z"/></svg>ComfyUI settings — model, sampler, steps, denoise</span>
+          <svg class="comfy-arrow icon" viewBox="0 0 24 24" style="width:0.9em;height:0.9em;transition:transform 0.2s"><path d="M12 16l-6-6h12z"/></svg>
         </button>
         <div class="comfy-body" id="comfyBody">
           <!-- Model cards -->
@@ -991,8 +1020,8 @@
 
       <div class="slider-row">
         <label for="maxFrames">Max frames</label>
-        <input type="range" id="maxFrames" min="8" max="20" value="15" oninput="updateFrameCount()">
-        <span class="slider-val" id="frameCountVal">15</span>
+        <input type="range" id="maxFrames" min="8" max="30" value="30" oninput="updateFrameCount()">
+        <span class="slider-val" id="frameCountVal">30</span>
       </div>
 
       <div class="actions">
@@ -1013,7 +1042,7 @@
       </div>
       <div class="progress-right">
         <span class="progress-pct" id="progressPct">0%</span>
-        <button class="btn btn-danger" id="stopBtn" style="padding:0.3rem 0.7rem;font-size:0.76rem;" onclick="stopGeneration()">⏹ Cancel</button>
+        <button class="btn btn-danger" id="stopBtn" style="padding:0.3rem 0.7rem;font-size:0.76rem;" onclick="stopGeneration()"><span style="display:inline-flex;align-items:center;gap:0.25rem"><svg class="icon" viewBox="0 0 24 24" style="width:0.9em;height:0.9em"><path d="M5 5h14v14H5z" fill="currentColor"/></svg>Stop</span></button>
       </div>
     </div>
     <div class="progress-track">
@@ -1030,8 +1059,8 @@
   <!-- Error -->
   <div class="error-panel" id="errorPanel">
     <div class="error-head">
-      <span>⚠ Error</span>
-      <span class="error-close" onclick="hideError()">×</span>
+      <span><span style="display:inline-flex;align-items:center;gap:0.3rem"><svg class="icon" viewBox="0 0 24 24" style="width:1em;height:1em"><path d="M12 2L1 21h22L12 2zm0 4l7 12H5l7-12zm-.5 3v4h1v4h-1v-4zm1 0v.01h-.01V9h.01v4z" fill="currentColor"/></svg>Error</span></span>
+      <span class="error-close" onclick="hideError()">✕</span>
     </div>
     <div id="errorMsg"></div>
     <div id="errorDetail"></div>
@@ -1046,19 +1075,19 @@
 
     <!-- Video player -->
     <div class="player-wrap" id="playerWrap">
-      <video id="resultVideo" preload="metadata"></video>
+      <video id="resultVideo" preload="metadata" playsinline></video>
       <div class="v-overlay" id="vOverlay" onclick="togglePlay()">
-        <div class="v-play-big" id="vPlayBig">▶</div>
+        <div class="v-play-big" id="vPlayBig"><svg class="icon" viewBox="0 0 24 24"><path d="M10 5v14l9-7z"/></svg></div>
       </div>
       <div class="v-controls">
-        <button class="v-btn" id="vPlayBtn" onclick="togglePlay()">▶</button>
+        <button class="v-btn" id="vPlayBtn" onclick="togglePlay()" title="Play/Pause"><svg class="icon" viewBox="0 0 24 24"><path d="M10 5v14l9-7z"/></svg></button>
         <span class="v-time-cur" id="vCurTime">0:00</span>
         <div class="v-scrub" id="vScrub">
           <div class="v-scrub-fill" id="vScrubFill" style="width:0%"></div>
         </div>
         <span class="v-time-dur" id="vDurTime">0:00</span>
-        <button class="v-btn" id="vVolBtn" onclick="toggleMute()">🔊</button>
-        <button class="v-btn" onclick="goFullscreen()" title="Fullscreen">⛶</button>
+        <button class="v-btn" id="vVolBtn" onclick="toggleMute()" title="Toggle mute"><svg class="icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-.94-.2-1.85-.55-2.69l1.42-1.42A8.91 8.91 0 0119 12c0 1.85-.5 3.58-1.37 4.96l-1.42-1.42.01-.01.01-.03c.35-.74.55-1.6.55-2.48z"/></svg></button>
+        <button class="v-btn" onclick="goFullscreen()" title="Fullscreen"><svg class="icon" viewBox="0 0 24 24"><path d="M7 1h6v2H9v5H7V3H5v3H3V1h2zm7 15v6h2v-4h2v4h2v-6h-6zm7-7h-2V7h4v6h-2V9h-2v8h2V9h2zm-9 7v-2H5v2h10zm2 2v-2h-6v2h6z"/></svg></button>
       </div>
     </div>
 
@@ -1097,7 +1126,7 @@
   <div class="console-wrap">
     <button class="console-toggle" id="consoleToggleBtn" onclick="toggleConsole()">
       <span id="consoleTitle">Developer console (0 entries)</span>
-      <span class="c-arrow" id="cArrow">▼</span>
+      <span class="c-arrow" id="cArrow"></span>
     </button>
     <div class="console-body" id="consoleBody">
       <div class="console-acts">
@@ -1115,12 +1144,33 @@
 // ════════════════════════════════════════════════════════════════
 const API_BASE = window.location.origin;
 
+// ── SVG icon definitions (clean, professional replacement for emoji) ──
+const ICONS = {
+  audio:   '<svg class="icon" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.83-2-1.5-.62.62-.9 1.4-.8 2.28.11.94.73 1.74 1.55 2.14.82.4 1.8.36 2.56-.1.7-.42 1.2-1.13 1.35-1.97.15-.85-.1-1.66-.75-2.22C14.83 11.5 15 11 15 10.15V3h2V10.15c0 1.24-.29 2.29-.96 3.14.67.29 1.27.74 1.76 1.31.53-.6.96-1.28 1.24-2.04.27-.77.36-1.59.16-2.37-.19-.77-.57-1.4-1.07-1.81.5-.63.84-1.38.97-2.22.13-.84-.12-1.65-.72-2.2C18.97 3.97 18.5 3.5 18 3.3V3h-6z"/></svg>',
+  scissors: '<svg class="icon" viewBox="0 0 24 24"><path d="M9.5 12c0 1.38-.72 2.58-1.84 3.27L6 22l-2-1 3.5-5.75c-.01-.12-.01-.24-.01-.36 0-.11.01-.23.01-.34L7.5 12.5 12 9l-2.5-4.5-9.5 1.5v-.01L3 3 5 1l3.5 5.25C9.49 6.14 10 6.98 10 8c0 .96-.55 1.82-1.35 2.23L10 12l2.5 4.5 9.5-1.5.5-.5-.14-.64L12.25 12l5.25-8.75.14-.64-.5-.5-1.5-.25h-.01l-1.5 8L9.5 12z"/></svg>',
+  gear:     '<svg class="icon" viewBox="0 0 24 24"><path d="M12 8a4 4 0 100 8 4 4 1200 0 000-8zM19.4 13a7.5 7.5 0 000-2l2-1.5a.5.5 0 00-.3-.9l-2.2.9a7.5 7.5 0 00-1.7-1l-.3-2.3a.5.5 0 00-.5-.4h-4a.5.5 0 00-.5.4l-.3 2.3a7.5 7.5 0 00-1.7 1l-2.2-.9a.5.5 0 00-.7.5l2 1.5a7.5 7.5 0 000 2l-2 1.5a.5.5 0 00.3.9l2.2-.9a7.5 7.5 0 001.7 1l.3 2.3a.5.5 0 00.5.4h4a.5.5 0 00.5-.4l.3-2.3a7.5 7.5 0 001.7-1l2.2.9a.5.5 0 00.7-.5l-2-1.5z"/></svg>',
+  play:     '<svg class="icon" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v10z"/></svg>',
+  pause:    '<svg class="icon" viewBox="0 0 24 24"><path d="M6 5h3v14H6zm9 0h3v14h-3z"/></svg>',
+  stop:     '<svg class="icon" viewBox="0 0 24 24"><path d="M5 5h14v14H5z"/></svg>',
+  volume:   '<svg class="icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-.7-.14-1.37-.4-1.98l1.42-1.42A8.91 8.91 0 0119 12c0 1.85-.5 3.58-1.37 4.96l-1.42-1.42c.27-.6.4-1.28.4-1.96zM12.5 6c.84 0 1.63.22 2.31.6l1.43-1.43C14.71 4.21 13.65 4 12.5 4c-2.21 0-4.18.82-5.66 2.15l1.43 1.43.01.01C9.46 6.34 10.9 6 12.5 6z"/></svg>',
+  mute:     '<svg class="icon" viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-.73-3.37-1.91-4.5l1.42-1.42A8.91 8.91 0 0119 12c0 1.85-.5 3.58-1.37 4.96l-1.42-1.42A6.38 6.38 0 0016.5 12z"/></svg>',
+  fullscreen: '<svg class="icon" viewBox="0 0 24 24"><path d="M7 2h3l-5 5v2H2V7l5-5zm13 0h3v3l-5-5v2h2zm-7 14l5 5v-3h-2l-3-3-3 3 5 5v3l5-5h-2l-3-3z"/></svg>',
+  close:    '<svg class="icon" viewBox="0 0 24 24"><path d="M18.3 5.75L12 12.1l6.3 6.35-1.4 1.4-6.3-6.35-6.3 6.35-1.4-1.4L10.6 12.1 4.3 5.75l1.4-1.4L12 13.6l6.3-6.35z"/></svg>',
+  warning:  '<svg class="icon" viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 4l7 12H5l7-12zm-.5 3v4h1v4h-1v-4zm1 0v.01h-.01V9h.01v4z" fill="currentColor"/></svg>',
+  arrowDown: '<svg class="icon" viewBox="0 0 24 24"><path d="M12 16l-6-6h12z"/></svg>',
+  arrowUp:   '<svg class="icon" viewBox="0 0 24 24"><path d="M12 8l6 6H6z"/></svg>',
+  attach:   '<svg class="icon" viewBox="0 0 24 24"><path d="M15.5 2a4.5 4.5 0 00-3.2 7.65l4.35 4.35a2.5 2.5 0 103.55-3.55l-4.35-4.35A2.5 2.5 0 1012 9.5a2.5 2.5 0 00-4.47-1.07L9.5 11H5a3 3 0 000 6h1l-.1.1a2.5 2.5 0 003.4 3.75l5-5a4.5 4.5 0 00-.45-6.55 4.5 4.5 0 00-2.9-1.07z"/></svg>',
+  check:    '<svg class="icon" viewBox="0 0 24 24"><path d="M8 15l2.14 2.14L17 8V6h2v4l-6.86 6.86L8 15z"/></svg>',
+  clock:    '<svg class="icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>',
+};
+
 let selectedStyle    = null;
 let selectedFile     = null;
 let croppedBlob      = null;   // Set when slicer is used
 let generationMode   = 'fast';
-let maxFrames        = 15;
+let maxFrames        = 30;
 let selectedModelKey = null;   // ComfyUI checkpoint model key
+let currentModelInfo = null;   // Cached for applyModelDefaults()
 let consoleEntries   = [];
 let pollingInterval  = null;
 let lastLogCount     = 0;
@@ -1160,7 +1210,7 @@ function toggleConsole() {
   const arr  = document.getElementById('cArrow');
   body.classList.toggle('open');
   btn.classList.toggle('open');
-  arr.textContent = body.classList.contains('open') ? '▲' : '▼';
+  arr.innerHTML = body.classList.contains('open') ? ICONS.arrowUp : ICONS.arrowDown;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1328,8 +1378,49 @@ class AudioSlicer {
   getStart() { return this.startT; }
 }
 
+// ── Audio preview for slicer ─────────────────────────────────────────────
+let _previewSrc = null;
+let _previewCtx = null;
+let isPreviewing = false;
+
+function _stopPreview() {
+  if (_previewSrc) { try { _previewSrc.stop(); } catch(e){} _previewSrc.disconnect(); }
+  if (_previewCtx) { try { _previewCtx.close(); } catch(e){} }
+  _previewSrc = null; _previewCtx = null;
+  isPreviewing = false;
+  const stopBtn = document.getElementById('stopPreviewBtn');
+  const prevBtn = document.getElementById('previewSliceBtn');
+  if (stopBtn) stopBtn.style.display = 'none';
+  if (prevBtn) prevBtn.disabled = !slicer;
+}
+
+function stopSlicePreview() {
+  _stopPreview();
+}
+
+function previewSlice() {
+  if (!slicer || !audioBuffer) return;
+  _stopPreview();
+  const start = slicer.getStart();
+  const dur = Math.min(30, audioBuffer.duration - start);
+  if (dur <= 0.1) return;
+  _previewCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = _previewCtx.createBufferSource();
+  src.buffer = audioBuffer;
+  src.connect(_previewCtx.destination);
+  src.start(0, start, dur);
+  _previewSrc = src;
+  isPreviewing = true;
+  const stopBtn = document.getElementById('stopPreviewBtn');
+  const prevBtn = document.getElementById('previewSliceBtn');
+  if (stopBtn) stopBtn.style.display = 'inline-flex';
+  if (prevBtn) prevBtn.disabled = true;
+  log(`Previewing slice: ${fmt(start)} → ${fmt(start + dur)}`, 'info');
+}
+
 // ════════════════════════════════════════════════════════════════
 // WAV ENCODER (crop audio to 30s window client-side)
+
 // ════════════════════════════════════════════════════════════════
 async function cropAudio(file, startSeconds) {
   const arrBuf  = await file.arrayBuffer();
@@ -1393,9 +1484,10 @@ async function handleFile(file) {
   croppedBlob  = null;
   audioBuffer  = null;
   slicer       = null;
+  _stopPreview();
 
   document.getElementById('uploadZone').classList.add('has-file');
-  document.getElementById('uploadText').textContent = '📎 Click to change file';
+  document.getElementById('uploadText').innerHTML = `${ICONS.attach} Change file`;
   document.getElementById('slicerPanel').style.display = 'none';
 
   // Decode audio to check duration
@@ -1418,12 +1510,12 @@ async function handleFile(file) {
 
   if (dur <= 30) {
     document.getElementById('fileInfo').className = 'ok';
-    document.getElementById('fileInfo').textContent = `✅ ${file.name} — ${fmt(dur)} / ${mb} MB`;
+    document.getElementById('fileInfo').innerHTML = `${ICONS.check} ${file.name} — ${fmt(dur)} / ${mb} MB`;
     log(`Audio ready: ${file.name} (${dur.toFixed(1)}s)`, 'success');
   } else {
     document.getElementById('fileInfo').className = 'warn';
-    document.getElementById('fileInfo').textContent =
-      `📐 ${file.name} — ${fmt(dur)} total · slice 30s below`;
+    document.getElementById('fileInfo').innerHTML =
+      `${ICONS.clock} ${file.name} — ${fmt(dur)} total · slice 30s below`;
 
     // Show slicer
     document.getElementById('slicerPanel').style.display = 'block';
@@ -1435,6 +1527,7 @@ async function handleFile(file) {
       canvas.width  = Math.max(400, wrapper.clientWidth - 2);
       canvas.height = 72;
       slicer = new AudioSlicer(canvas, decoded);
+      document.getElementById('previewSliceBtn').disabled = false;
       slicer.onChange = (t) => {
         const end = Math.min(dur, t + 30);
         document.getElementById('sliceStartLabel').textContent = fmt(t);
@@ -1484,7 +1577,6 @@ function toggleComfy() {
   const btn  = document.getElementById('comfyToggle');
   body.classList.toggle('open');
   btn.classList.toggle('open');
-  btn.querySelector('.comfy-arrow').textContent = body.classList.contains('open') ? '▲' : '▼';
 }
 
 function updateFrameCount() {
@@ -1500,8 +1592,15 @@ function selectStyle(key) {
   log(`Style: ${key}`, 'info');
 }
 
+function autoSelectDefaultStyle() {
+  if (selectedStyle === null && LORA_STYLES) {
+    selectStyle('none');
+  }
+}
+
 function selectModel(key, modelInfo) {
   selectedModelKey = key;
+  currentModelInfo = modelInfo; // store for applyModelDefaults()
   document.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
   const sel = document.querySelector(`.model-card[data-key="${key}"]`);
   if (sel) sel.classList.add('selected');
@@ -1516,7 +1615,36 @@ function selectModel(key, modelInfo) {
     if (modelInfo.optimal_sampler)  document.getElementById('cfSampler').value  = modelInfo.optimal_sampler;
     if (modelInfo.optimal_scheduler) document.getElementById('cfScheduler').value = modelInfo.optimal_scheduler;
   }
+  // Show optimal settings as visible suggestions (Task E2)
+  const panel = document.getElementById('modelSuggestions') ||
+    (() => {
+      const p = document.createElement('div');
+      p.id = 'modelSuggestions';
+      p.className = 'model-suggestions';
+      document.getElementById('modelCards').after(p);
+      return p;
+    })();
+  panel.innerHTML = `
+    <div class="suggestion-label">✦ Suggested for ${modelInfo?.display_name || key}</div>
+    <div class="suggestion-values">
+      Steps: <strong>${modelInfo?.optimal_steps}</strong> &nbsp;·&nbsp;
+      Guidance: <strong>${modelInfo?.optimal_guidance}</strong> &nbsp;·&nbsp;
+      Denoise: <strong>${modelInfo?.optimal_denoise}</strong> &nbsp;·&nbsp;
+      Continuation: <strong>${modelInfo?.optimal_denoise_continuation}</strong> &nbsp;·&nbsp;
+      ${modelInfo?.optimal_width}×${modelInfo?.optimal_height} &nbsp;·&nbsp;
+      ${modelInfo?.optimal_sampler} / ${modelInfo?.optimal_scheduler}
+    </div>
+    ${modelInfo?.notes ? `<div class="suggestion-notes">${modelInfo.notes}</div>` : ''}
+    <button class="btn btn-secondary" style="margin-top:0.5rem;font-size:0.75rem;"
+      onclick="applyModelDefaults()">Apply suggested settings</button>
+  `;
   log(`Model: ${modelInfo?.display_name || key}`, 'info');
+}
+
+function applyModelDefaults() {
+  if (currentModelInfo && selectedModelKey) {
+    selectModel(selectedModelKey, currentModelInfo);
+  }
 }
 
 function updateReadyState() {
@@ -1531,6 +1659,7 @@ function updateReadyState() {
 // ════════════════════════════════════════════════════════════════
 async function generateVideo() {
   hideError();
+  _stopPreview();
   resetStages();
   document.getElementById('progressPanel').style.display = 'block';
   document.getElementById('generateBtn').disabled = true;
@@ -1676,22 +1805,22 @@ function initPlayer() {
   v.addEventListener('canplay', () => { wrap.classList.remove('loading'); });
 
   v.addEventListener('play', () => {
-    document.getElementById('vPlayBtn').textContent = '⏸';
-    document.getElementById('vPlayBig').textContent = '⏸';
+    document.getElementById('vPlayBtn').innerHTML = ICONS.pause;
+    document.getElementById('vPlayBig').innerHTML = ICONS.pause;
     document.getElementById('vOverlay').classList.add('hide');
     wrap.classList.remove('paused');
   });
 
   v.addEventListener('pause', () => {
-    document.getElementById('vPlayBtn').textContent = '▶';
-    document.getElementById('vPlayBig').textContent = '▶';
+    document.getElementById('vPlayBtn').innerHTML = ICONS.play;
+    document.getElementById('vPlayBig').innerHTML = ICONS.play;
     document.getElementById('vOverlay').classList.remove('hide');
     wrap.classList.add('paused');
   });
 
   v.addEventListener('ended', () => {
-    document.getElementById('vPlayBtn').textContent = '↺';
-    document.getElementById('vPlayBig').textContent = '↺';
+    document.getElementById('vPlayBtn').innerHTML = ICONS.clock;
+    document.getElementById('vPlayBig').innerHTML = ICONS.clock;
     document.getElementById('vOverlay').classList.remove('hide');
     wrap.classList.add('paused');
   });
@@ -1711,7 +1840,7 @@ function togglePlay() {
 function toggleMute() {
   const v = document.getElementById('resultVideo');
   v.muted = !v.muted;
-  document.getElementById('vVolBtn').textContent = v.muted ? '🔇' : '🔊';
+  document.getElementById('vVolBtn').innerHTML = v.muted ? ICONS.mute : ICONS.volume;
 }
 
 function goFullscreen() {
@@ -1746,8 +1875,8 @@ function showResults(result, testResult = null, jobData = null) {
     document.getElementById('playerWrap').style.display = 'block';
     document.getElementById('playerWrap').classList.add('loading', 'paused');
     document.getElementById('vOverlay').classList.remove('hide');
-    document.getElementById('vPlayBig').textContent = '▶';
-    document.getElementById('vPlayBtn').textContent  = '▶';
+    document.getElementById('vPlayBig').innerHTML = ICONS.play;
+    document.getElementById('vPlayBtn').innerHTML  = ICONS.play;
 
     v.src = `${API_BASE}/stream/${result.job_id}`;
     v.load();
@@ -1972,14 +2101,17 @@ async function loadModels() {
 // ════════════════════════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', () => {
+async function initApp() {
   setMode('fast');
   initPlayer();
-  loadConfig();
+  await loadConfig();
   loadModels();
-  loadStyles();
+  await loadStyles();
+  autoSelectDefaultStyle();
   document.getElementById('playerWrap').classList.add('paused');
-});
+}
+
+document.addEventListener('DOMContentLoaded', initApp);
 </script>
 </body>
 </html>

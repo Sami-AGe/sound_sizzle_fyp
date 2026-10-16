@@ -185,6 +185,13 @@ def generate_storyboard(
     # any scenes are designed. This anchor is then frozen for the entire video.
     anchor = generate_character_anchor(audio_data, style_name, style_trigger_word)
 
+    # ── Task C: Guard against null / failed character anchor ────────────────
+    if anchor is None or not anchor.get("short_anchor_text"):
+        raise ValueError(
+            "Character anchor generation failed — storyboard aborted. "
+            "Check Groq API key and TPM limits."
+        )
+
     # ── CALL 2: Generate Full Scene + Frame Plan ───────────────────────────
     from models.lora_registry import STYLE_LORAS, MOOD_GRADES
 
@@ -231,7 +238,7 @@ def generate_storyboard(
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.75,
-                max_tokens=6000  # Under Groq free-tier 8000 TPM limit (prompt ~700 + 6000 = ~6700)
+                max_tokens=5500  # Groq free-tier 8000 TPM limit (prompt ~2300 + 5500 = ~7800, safe margin)
             )
 
             raw_json = response.choices[0].message.content.strip()
@@ -274,6 +281,10 @@ def generate_storyboard(
                 # Quality mode: inject the anchor's reference_prompt if not present
                 if not storyboard.subject_reference_prompt:
                     storyboard.subject_reference_prompt = anchor.get("reference_prompt", "")
+            # Inject character_anchor for both modes — used by Stage 3 for
+            # {character_anchor} token resolution in keyframe prompts
+            if not storyboard.character_anchor:
+                storyboard.character_anchor = CharacterAnchor(**anchor)
 
             if save_path:
                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -310,6 +321,10 @@ def parse_storyboard_json(raw_json: str) -> Storyboard:
         fixed = fix_json(raw_json)
         parsed = json.loads(fixed)
 
+    # The character_anchor is always re-injected from the dedicated Call 1
+    # anchor (see generate_storyboard), so strip any LLM-generated version to
+    # avoid Pydantic validation failures when the LLM omits required fields.
+    parsed.pop("character_anchor", None)
     storyboard = Storyboard(**parsed)
     return storyboard
 

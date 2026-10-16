@@ -18,7 +18,7 @@ from models.schemas import AudioAnalysisResult
 from utils.audio_utils import get_energy_at_time
 
 # Valid mood keys for the MOOD_GRADES registry (stage2/stage4)
-VALID_MOODS = {"melancholic", "energetic", "dark_intense", "euphoric", "tense", "neutral"}
+VALID_MOODS = {"melancholic", "energetic", "dark_intense", "euphoric", "tense", "neutral", "neutral_cinematic"}
 
 
 # Default model sizes for whisper transcription.
@@ -103,14 +103,14 @@ def _detect_mood(transcript: str, tempo: float, avg_energy: float, groq_client) 
             "melancholic_lonely": "melancholic",
             "peaceful_dreamy": "melancholic",
             "chaotic_anxious": "tense",
-            "neutral_cinematic": "neutral",
+            "neutral_cinematic": "neutral_cinematic",
         }
-        return mood_map.get(audio_mood, "neutral")
+        return mood_map.get(audio_mood, "neutral_cinematic")
 
     prompt = (
         f"Song lyrics: {transcript[:500]}\n"
         f"Tempo: {tempo:.0f} BPM, Energy: {'high' if avg_energy > 0.05 else 'low'}\n\n"
-        "Classify mood as one of: melancholic / energetic / dark_intense / euphoric / tense / neutral\n"
+        "Classify mood as one of: melancholic / energetic / dark_intense / euphoric / tense / neutral / neutral_cinematic\n"
         "Respond with one word only."
     )
     try:
@@ -203,17 +203,6 @@ def analyze_audio(
     # ── Zero crossing rate (noisiness) ───────────────────────────────────────
     zcr = float(np.mean(librosa.feature.zero_crossing_rate(y=y)))
 
-    # ── Mood Detection ───────────────────────────────────────────────────────
-    avg_energy = float(np.mean(rms_normalized))
-    # Use Groq-based mood detection if API key available, else fallback to audio features
-    GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-    groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-    detected_mood = _detect_mood(transcript or "", tempo, avg_energy, groq_client)
-    print(f"[Stage 1] Mood detected: {detected_mood} (energy={avg_energy:.2f})")
-
-    # ── Energy Sections (structural segments) ────────────────────────────────
-    energy_sections = segment_energy(rms_normalized, rms_timestamps, duration)
-
     # ── Transcription (Whisper) ──────────────────────────────────────────────
     transcript = None
     try:
@@ -224,6 +213,17 @@ def analyze_audio(
         print(f"[Stage 1] Transcript: {transcript[:80]}{'...' if len(transcript) > 80 else ''}")
     except Exception as e:
         print(f"[Stage 1] Whisper transcription failed: {e}")
+
+    # ── Mood Detection ───────────────────────────────────────────────────────
+    avg_energy = float(np.mean(rms_normalized))
+    # Use Groq-based mood detection if API key available, else fallback to audio features
+    GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+    groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+    detected_mood = _detect_mood(transcript or "", tempo, avg_energy, groq_client)
+    print(f"[Stage 1] Mood detected: {detected_mood} (energy={avg_energy:.2f})")
+
+    # ── Energy Sections (structural segments) ────────────────────────────────
+    energy_sections = segment_energy(rms_normalized, rms_timestamps, duration)
 
     analysis = AudioAnalysisResult(
         duration=duration,

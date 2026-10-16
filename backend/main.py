@@ -87,7 +87,7 @@ def get_config():
         "text_to_image_model": os.environ.get("TEXT_TO_IMAGE_MODEL", "stabilityai/stable-diffusion-3-medium"),
         "image_to_image_model": os.environ.get("IMAGE_TO_IMAGE_MODEL", "black-forest-labs/FLUX.1-Kontext-dev"),
         "generation_mode_default": os.environ.get("GENERATION_MODE", "fast"),
-        "max_frames_default": int(os.environ.get("MAX_FRAMES", "15")),
+        "max_frames_default": int(os.environ.get("MAX_FRAMES", "30")),
         "whisper_model_size": os.environ.get("WHISPER_MODEL_SIZE", "base"),
     }
 
@@ -337,7 +337,7 @@ async def test_stage1(
 @app.post("/test/stage2")
 async def test_stage2(
     audio: UploadFile = File(...),
-    style: str = Form("cyberpunk"),
+    style: str = Form("none"),
     whisper_model: str = Form("base"),
     mode: str = Form("fast"),
     max_frames: int = Form(None)
@@ -373,7 +373,9 @@ async def test_stage2(
             style_trigger_word=style_info["trigger_word"],
             save_path=os.path.join(TEMP_DIR, f"test_{upload_id}_storyboard.json"),
             generation_mode=mode,
-            max_frames=max_frames or int(os.environ.get("MAX_FRAMES", "15")) or None
+            max_frames=max_frames or int(os.environ.get("MAX_FRAMES", "30")) or None,
+            style_key=style,
+            detected_mood=audio_data.detected_mood,
         )
 
         return JSONResponse({

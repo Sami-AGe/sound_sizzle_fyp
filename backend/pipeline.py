@@ -89,6 +89,14 @@ def run_pipeline(
     job_dir = os.path.join(OUTPUT_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
 
+    # Copy audio file into job directory so it survives upload cleanup
+    # and resolves with an absolute path during Stage 4 video assembly.
+    audio_ext = os.path.splitext(audio_path)[1] or ".wav"
+    job_audio_path = os.path.abspath(os.path.join(job_dir, f"input_audio{audio_ext}"))
+    import shutil as _shutil
+    _shutil.copy2(audio_path, job_audio_path)
+    audio_path = job_audio_path
+
     if progress_job_id:
         update_job(progress_job_id, status="running", current_stage=0)
 

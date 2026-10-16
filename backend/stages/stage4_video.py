@@ -23,6 +23,7 @@ from models.schemas import (
 from utils.audio_utils import (
     get_energy_at_time, get_brightness_at_time, is_near_onset,
 )
+from job_manager import log_progress
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 TARGET_FPS = 30
@@ -93,6 +94,7 @@ def build_video(
     clips = []
     effects_log = set()
     running_start = 0.0  # accumulated start time for beat-aligned transitions
+    last_valid_image = None  # track last non-placeholder frame for substitution
 
     total_frames = len(frame_set.frames)
     print(f"[Stage 4] Building video from {total_frames} frames at {TARGET_FPS}fps...")
@@ -103,6 +105,35 @@ def build_video(
 
         # Load and resize the image
         raw_image = load_and_resize(frame.image_path, OUTPUT_RESOLUTION)
+
+        # Task B: Detect black/dark placeholder frames from failed Stage 3 generation.
+        # A failed frame is saved as a flat-color placeholder (very small file size
+        # and/or near-zero pixel variance). Substitute the last valid frame instead.
+        is_placeholder = False
+        try:
+            file_size = os.path.getsize(frame.image_path)
+            gray = cv2.cvtColor(raw_image, cv2.COLOR_BGR2GRAY)
+            mean_brightness = float(np.mean(gray))
+            std_brightness = float(np.std(gray))
+            # File < 5KB (solid colour PNG) OR flat dark image (no texture)
+            is_placeholder = file_size < 5000 or (mean_brightness < 20 and std_brightness < 5)
+        except Exception:
+            is_placeholder = False
+
+        if is_placeholder:
+            if last_valid_image is not None:
+                log_progress(job_id,
+                    f"[Stage 4] Frame {frame.frame_id} is a black placeholder "
+                    f"(size={file_size}B, mean={mean_brightness:.0f}) — "
+                    f"substituting last valid frame", "warn")
+                raw_image = last_valid_image.copy()
+            else:
+                log_progress(job_id,
+                    f"[Stage 4] Frame {frame.frame_id} is a black placeholder "
+                    f"and no previous valid frame exists — keeping as-is", "warn")
+        else:
+            last_valid_image = raw_image.copy()
+
         duration = frame.hold_duration or frame.duration
         num_frames = max(1, int(duration * TARGET_FPS))
 
@@ -169,8 +200,13 @@ def build_video(
 
     # Attach original audio
     audio_duration = min(30.0, audio_data.duration)
-    audio = AudioFileClip(audio_path).subclipped(0, audio_duration)
-    final_video = final_video.with_audio(audio)
+    log_progress(job_id, f"[Stage 4] Loading audio: {audio_path} (duration={audio_data.duration:.1f}s)", "info")
+    try:
+        audio = AudioFileClip(audio_path).subclipped(0, audio_duration)
+        final_video = final_video.with_audio(audio)
+        log_progress(job_id, "[Stage 4] Audio attached successfully", "success")
+    except Exception as e:
+        log_progress(job_id, f"[Stage 4] WARNING: Could not attach audio: {e}", "error")
 
     # Apply mood-based colour grade (Stage 4 final touch)
     if detected_mood and detected_mood != "neutral":

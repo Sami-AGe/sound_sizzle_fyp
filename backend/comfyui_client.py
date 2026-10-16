@@ -26,7 +26,7 @@ import requests
 from PIL import Image
 
 COMFYUI_HOST = os.environ.get("COMFYUI_HOST", "http://10.40.12.55:8188")
-COMFYUI_MODEL = os.environ.get("COMFYUI_MODEL", "meinmix_v12Final")
+COMFYUI_MODEL = os.environ.get("COMFYUI_MODEL", "meinamix_v12Final")
 COMFYUI_TIMEOUT = int(os.environ.get("COMFYUI_TIMEOUT", "600"))  # 600s default for CPU/RX580
 COMFYUI_MAX_RETRIES = int(os.environ.get("COMFYUI_MAX_RETRIES", "3"))
 

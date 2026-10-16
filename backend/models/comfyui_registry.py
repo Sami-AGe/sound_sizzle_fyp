@@ -24,31 +24,18 @@ COMFYUI_MODELS = {
         "optimal_scheduler": "normal",
         "notes": "Anime/manga style. Excellent character consistency. SD 1.5 based."
     },
-    "dreamshaper": {
-        "display_name": "DreamShaper v5",
-        "filename": "dreamshaper_v5.safetensors",
-        "optimal_steps": 25,
-        "optimal_guidance": 7.0,
-        "optimal_denoise": 0.75,
+    "sd15": {
+        "display_name": "Stable Diffusion 1.5",
+        "filename": "v1-5-pruned-emaonly-fp16.safetensors",
+        "optimal_steps": 20,
+        "optimal_guidance": 7.5,
+        "optimal_denoise": 0.70,
         "optimal_denoise_continuation": 0.45,
         "optimal_width": 768,
         "optimal_height": 768,
-        "optimal_sampler": "euler_a",
-        "optimal_scheduler": "karras",
-        "notes": "Versatile all-rounder. Good balance of detail and style. SD 1.5 based."
-    },
-    "deliberate": {
-        "display_name": "Deliberate v5",
-        "filename": "deliberate_v5.safetensors",
-        "optimal_steps": 30,
-        "optimal_guidance": 7.5,
-        "optimal_denoise": 0.80,
-        "optimal_denoise_continuation": 0.50,
-        "optimal_width": 768,
-        "optimal_height": 768,
-        "optimal_sampler": "dpmpp_2m",
-        "optimal_scheduler": "karras",
-        "notes": "High-detail, cinematic. Best for photorealistic or detailed illustration."
+        "optimal_sampler": "euler",
+        "optimal_scheduler": "normal",
+        "notes": "Base SD 1.5 model. Use with LoRA styles for consistent output."
     },
 }
 

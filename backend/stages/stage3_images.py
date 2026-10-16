@@ -70,7 +70,7 @@ GUIDANCE_SCALE = 7.5
 
 # Inter-frame delay for GPU thermal management (especially ComfyUI on CPU/RX580).
 # Increase when frames are generated back-to-back and the GPU heats up.
-FRAME_DELAY = float(os.environ.get("FRAME_DELAY", "0.5"))
+FRAME_DELAY = float(os.environ.get("FRAME_DELAY", "8.0"))
 
 
 def build_negative_prompt() -> str:
@@ -270,7 +270,10 @@ def generate_all_frames_fast(
                     strength_used=None
                 ))
 
-            time.sleep(FRAME_DELAY)
+            frame_delay = float(os.environ.get("FRAME_DELAY", str(FRAME_DELAY)))
+            log_progress(progress_job_id,
+                f"[Stage 3] GPU cooldown: sleeping {frame_delay}s before next frame...", "info")
+            time.sleep(frame_delay)
 
     log_progress(progress_job_id, f"[Stage 3 FAST] Complete: {len(generated_frames)}/{total_frames_count} frames generated", "success")
 
@@ -392,27 +395,31 @@ def generate_all_frames_quality(
 
             try:
                 if frame_directive.type == FrameType.KEYFRAME:
-                    # Fresh generation but guided by reference image for consistency
+                    # Fresh text_to_image — establishes the new scene from scratch.
+                    # PROMPT ORDER (Task A): environment → lighting → style → {character_anchor} last
+                    anchor = storyboard.character_anchor
+                    resolved_prompt = resolve_prompt_tokens(
+                        frame_directive.full_prompt, anchor
+                    ) if anchor else frame_directive.full_prompt
                     full_prompt = (
-                        f"{frame_directive.full_prompt}, "
+                        f"{resolved_prompt}, "
                         f"{style_trigger}, "
                         f"{scene.color_palette}, "
                         f"illustration, stylized"
                     )
-                    # Strength 0.82 for keyframes (heavy change), or override from frontend
-                    strength = denoise_override if denoise_override is not None else 0.82
+                    # Seed: scene_seed for intra-scene consistency, or global override
+                    keyframe_seed = (scene.scene_seed if (user_seed_override is None or user_seed_override == -1)
+                                     else user_seed_override)
 
-                    current_image = client.image_to_image(
-                        image=reference_image_data,
-                        model=IMAGE_TO_IMAGE_MODEL,
+                    current_image = client.text_to_image(
                         prompt=full_prompt,
+                        model=TEXT_TO_IMAGE_MODEL,
                         negative_prompt=NEGATIVE_PROMPT,
-                        strength=strength,
                         width=width,
                         height=height,
                         num_inference_steps=steps,
                         guidance_scale=guidance,
-                        seed=_random.randint(0, 2**32-1) if not user_seed_override or user_seed_override == -1 else user_seed_override,
+                        seed=keyframe_seed,
                         ckpt_name=ckpt_name,
                         sampler_name=sampler,
                         scheduler=scheduler,
@@ -421,11 +428,10 @@ def generate_all_frames_quality(
                     )
 
                 elif frame_directive.type == FrameType.CONTINUATION:
-                    # Evolve the PREVIOUS frame slightly
+                    # img2img from the PREVIOUS frame (not the reference portrait).
+                    # modifier_prompt is a short 2-15 word description of what changes.
                     modifier_prompt = (
-                        f"{storyboard.subject_description}, "
                         f"{frame_directive.modifier_prompt}, "
-                        f"{scene.color_palette}, "
                         f"{style_trigger}"
                     )
                     # Strength for continuations: denoise_continuation if set,
@@ -505,7 +511,10 @@ def generate_all_frames_quality(
             ))
 
             # Rate limit / thermal management pause between frames
-            time.sleep(FRAME_DELAY)
+            frame_delay = float(os.environ.get("FRAME_DELAY", str(FRAME_DELAY)))
+            log_progress(progress_job_id,
+                f"[Stage 3] GPU cooldown: sleeping {frame_delay}s before next frame...", "info")
+            time.sleep(frame_delay)
 
     log_progress(progress_job_id, f"[Stage 3 QUALITY] Complete: {len(generated_frames)}/{total_frame_count} frames generated", "success")
 
