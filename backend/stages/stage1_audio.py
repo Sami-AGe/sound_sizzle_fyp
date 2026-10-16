@@ -15,7 +15,7 @@ import whisper
 
 from groq import Groq
 from models.schemas import AudioAnalysisResult
-from utils.audio_utils import get_energy_at_time
+from utils.audio_utils import get_brightness_at_time
 
 # Valid mood keys for the MOOD_GRADES registry (stage2/stage4)
 VALID_MOODS = {"melancholic", "energetic", "dark_intense", "euphoric", "tense", "neutral", "neutral_cinematic"}
@@ -225,6 +225,27 @@ def analyze_audio(
     # ── Energy Sections (structural segments) ────────────────────────────────
     energy_sections = segment_energy(rms_normalized, rms_timestamps, duration)
 
+    # ── Detect unique moments for keyframe placement ─────────────────────────
+    # Create a temporary AudioAnalysisResult to pass to detect_unique_moments
+    _analysis_stub = AudioAnalysisResult(
+        duration=duration,
+        tempo=tempo,
+        beat_times=beat_times,
+        onset_times=onset_times,
+        rms_values=rms_normalized,
+        rms_timestamps=rms_timestamps,
+        spectral_centroid_mean=sc_mean,
+        spectral_centroid_over_time=sc_normalized.tolist(),
+        chroma_mean=chroma_mean,
+        mfcc_mean=mfcc_mean,
+        zero_crossing_rate=zcr,
+        transcript=transcript,
+        detected_mood=detected_mood,
+        energy_sections=energy_sections,
+    )
+    num_scenes = determine_scene_count(_analysis_stub, max_frames=None)
+    detect_unique_moments(_analysis_stub, num_scenes=num_scenes)
+
     analysis = AudioAnalysisResult(
         duration=duration,
         tempo=tempo,
@@ -233,13 +254,16 @@ def analyze_audio(
         rms_values=rms_normalized,
         rms_timestamps=rms_timestamps,
         spectral_centroid_mean=sc_mean,
-        spectral_centroid_over_time=sc_over_time,
+        spectral_centroid_over_time=sc_normalized.tolist(),
         chroma_mean=chroma_mean,
         mfcc_mean=mfcc_mean,
         zero_crossing_rate=zcr,
         transcript=transcript,
         detected_mood=detected_mood,
-        energy_sections=energy_sections
+        energy_sections=energy_sections,
+        spectral_flux=_analysis_stub.spectral_flux,
+        novelty_scores=_analysis_stub.novelty_scores,
+        unique_moments=_analysis_stub.unique_moments,
     )
 
     # ── Save to disk ─────────────────────────────────────────────────────────
@@ -289,6 +313,140 @@ def determine_scene_count(
         scene_count = max(scene_count, 1)
 
     return scene_count
+
+
+def detect_unique_moments(
+    audio_data: AudioAnalysisResult,
+    num_scenes: int = 3,
+) -> list:
+    """
+    Identifies the most distinctive moments in the audio for keyframe placement.
+
+    Computes a combined novelty score that weights:
+    - **Spectral flux** (timbral/transient change) — sharp changes in brightness
+    - **Onset proximity** — peaks near onsets (drops/hits) are unique
+    - **Energy deviation** — frames with energy well above the local average
+
+    Then uses scipy's find_peaks to locate local maxima, ranks them by
+    combined score, and returns the top ``num_scenes + 2`` moments.
+
+    Falls back to evenly-spaced beats if no peaks are found.
+
+    Returns
+    -------
+    list of dict
+        Each dict: ``{timestamp, energy, brightness, description}``
+    """
+    from scipy.signal import find_peaks as _scipy_find_peaks
+
+    rms_vals = audio_data.rms_values
+    rms_ts = audio_data.rms_timestamps
+    onset_times = audio_data.onset_times or []
+    sc_over_time = audio_data.spectral_centroid_over_time or []
+
+    if not rms_vals or not rms_ts:
+        return []
+
+    # ── Compute spectral flux (derivative of spectral centroid) ──────────
+    spectral_flux = []
+    for i in range(len(sc_over_time)):
+        if i == 0:
+            spectral_flux.append(abs(sc_over_time[0] * 0.5))
+        else:
+            spectral_flux.append(abs(sc_over_time[i] - sc_over_time[i - 1]))
+    audio_data.spectral_flux = [float(v) for v in spectral_flux]
+
+    # ── Compute novelty score ──────────────────────────────────────────────
+    # Combine normalized energy deviation, spectral flux, and onset proximity
+    mean_energy = float(np.mean(rms_vals)) if rms_vals else 0.0
+    mean_flux = float(np.mean(spectral_flux)) if spectral_flux else 0.0
+
+    novelty_scores = []
+    for i, t in enumerate(rms_ts):
+        # Energy deviation: how far above the mean is this frame?
+        energy_dev = rms_vals[i] / (mean_energy + 0.01) if mean_energy > 0 else 0.0
+        energy_dev = float(np.clip(energy_dev, 0, 3)) / 3.0  # normalize
+
+        # Spectral flux: timbral change
+        flux_norm = spectral_flux[i] / (mean_flux + 0.01) if mean_flux > 0 else 0.0
+        flux_norm = float(np.clip(flux_norm, 0, 3)) / 3.0
+
+        # Onset proximity: is there an onset nearby?
+        onset_near = any(abs(t - o) < 0.1 for o in onset_times)
+        onset_score = 1.0 if onset_near else 0.0
+
+        # Combine — flux and energy deviation weighted equally, onset as boost
+        score = 0.4 * flux_norm + 0.4 * energy_dev + 0.2 * onset_score
+        novelty_scores.append(float(score))
+
+    audio_data.novelty_scores = novelty_scores
+
+    # ── Detect peaks in novelty curve ──────────────────────────────────────
+    if len(novelty_scores) < 3:
+        peaks = []
+    else:
+        min_dist = max(3, int(0.3 * len(rms_ts) / audio_data.duration)) if audio_data.duration > 0 else 3
+        min_prominence = 0.1
+        peaks, _ = _scipy_find_peaks(
+            novelty_scores,
+            distance=min_dist,
+            prominence=min_prominence,
+        )
+
+    # ── Rank peaks and select top N ────────────────────────────────────────
+    target_count = num_scenes + 2
+    if len(peaks) > 0:
+        peak_scores = [(novelty_scores[p], p) for p in peaks]
+        peak_scores.sort(reverse=True)
+        selected_peaks = [p for _, p in peak_scores[:target_count]]
+        selected_peaks.sort()  # time-ordered
+    else:
+        # Fallback: evenly-spaced beats
+        n_beats = len(audio_data.beat_times)
+        if n_beats >= target_count:
+            step = n_beats // target_count
+            selected_peaks = list(range(0, n_beats, step))[:target_count]
+        elif n_beats > 0:
+            selected_peaks = list(range(n_beats))
+        else:
+            return []
+
+    # ── Build unique moments list ──────────────────────────────────────────
+    moments = []
+    for idx in selected_peaks:
+        if idx >= len(rms_ts):
+            continue
+        t = float(rms_ts[idx])
+        energy = float(rms_vals[idx])
+        brightness = get_brightness_at_time(
+            sc_over_time, rms_ts, t
+        ) if sc_over_time else audio_data.spectral_centroid_mean
+
+        # Generate a description
+        desc_parts = []
+        if energy > 0.7:
+            desc_parts.append("high-energy")
+        elif energy > 0.4:
+            desc_parts.append("moderate-energy")
+        else:
+            desc_parts.append("low-energy")
+        if brightness > 0.6:
+            desc_parts.append("bright timbre")
+        elif brightness < 0.4:
+            desc_parts.append("dark timbre")
+        onset_near = any(abs(t - o) < 0.1 for o in onset_times)
+        if onset_near:
+            desc_parts.append("onbeat onset")
+
+        moments.append({
+            "timestamp": round(t, 2),
+            "energy": round(energy, 2),
+            "brightness": round(brightness, 2),
+            "description": " + ".join(desc_parts),
+        })
+
+    audio_data.unique_moments = moments
+    return moments
 
 
 if __name__ == "__main__":

@@ -1,8 +1,63 @@
 # AUDIOSTORY — CURRENT_STATE.md
+# v30 (2026-10-16) — Unique moment keyframe detection, simplified visual language, FRAME_DELAY=8.0
 # v29 (2026-10-16) — Bug 15+16 fixes, Stage 3 verified, Tasks 1-5/A-F complete
 # v27 (2026-10-16) — Tasks A–F, D, E1, E2 complete. Keyframes use text_to_image. Prompt order fixed.
 # v26 (2026-10-14) — Visual quality diagnostic added from real user test
 # READ THIS FIRST. Only read HANDOFF.md for historical context.
+
+---
+
+## ✨ v30 — Unique Moment Keyframe Detection + Visual Language Fixes
+
+### Problem Summary (from user test feedback)
+1. Storyboard generates 1 frame per time segment → slideshow pacing, not video-like
+2. Storyboard directions use ambiguous words ("dynamic", "diagonal compositions") the image generator can't follow
+3. FRAME_DELAY inconsistent — `.env.example` had 0.5s, code default was 8.0s
+
+### Fix 1 — Unique moment detection for keyframe placement (`stage1_audio.py`)
+
+Added `detect_unique_moments()` function that:
+- Computes **spectral flux** (timbral change rate) from spectral centroid derivative
+- Computes **energy deviation** (how far each frame is above the mean)
+- Combines with **onset proximity** (peaks near audio hits/drops)
+- Uses `scipy.signal.find_peaks` to find local maxima in the combined novelty curve
+- Returns top `num_scenes + 2` moments with `{timestamp, energy, brightness, description}`
+- Falls back to evenly-spaced beats if no peaks found
+- Results stored in `AudioAnalysisResult.unique_moments` (new optional field)
+
+### Fix 2 — Frame distribution enforcement (`stage2_storyboard.py`)
+
+Added `_enforce_frame_distribution()` function that:
+- Ensures each scene has 3+ frames (1 keyframe + 2-3+ continuations) for video-like pacing
+- Snaps keyframe timestamps to nearest unique moment when available
+- If the LLM produced too few frames, duplicates continuation frames around keyframes
+- Calls `_rebalance_frame_timestamps()` to ensure timestamps fit within scene boundaries
+- Snapping to beat-aligned times when `audio_data.beat_times` is available
+
+### Fix 3 — Simplified visual language (`prompt_builder.py`)
+
+Added a **"VISUAL LANGUAGE CHEAT SHEET"** section to both Fast and Quality mode frame instructions:
+- Camera angle: only "low angle", "high angle", "eye level"
+- Shot distance: only "wide shot", "medium shot", "close-up", "extreme close-up"
+- Lighting: concrete descriptions like "single key light from upper left"
+- Movement: concrete actions like "character blinking", "camera tilts up"
+- Replaced abstract terms like "dynamic" with specific instructions
+
+Added **"FRAME DISTRIBUTION INSTRUCTIONS"** telling the LLM to:
+- Place 2-4 continuation frames after each keyframe
+- Use specific modifier_prompt examples: "character blinks slowly", "camera tilts up gently"
+- Snap keyframe timestamps to unique moments
+
+### Fix 4 — FRAME_DELAY consistency (`.env.example`)
+
+Changed `FRAME_DELAY=0.5` → `FRAME_DELAY=8.0` to match the code default in `stage3_images.py`.
+
+### Schema additions (`models/schemas.py`)
+
+Added three optional fields to `AudioAnalysisResult`:
+- `spectral_flux: Optional[List[float]]` — timbral change rate per frame
+- `novelty_scores: Optional[List[float]]` — combined uniqueness score per frame
+- `unique_moments: Optional[List[dict]]` — `[{timestamp, energy, brightness, description}]`
 
 ---
 

@@ -37,6 +37,9 @@ class AudioAnalysisResult(BaseModel):
     transcript: Optional[str]          # lyrics if detected
     detected_mood: str                 # derived mood label (see mood detection)
     energy_sections: List[dict]        # [{start, end, avg_energy, label}]
+    spectral_flux: Optional[List[float]] = None       # timbral change rate per frame
+    novelty_scores: Optional[List[float]] = None       # combined uniqueness score per frame
+    unique_moments: Optional[List[dict]] = None       # [{timestamp, energy, brightness, description}]
 
 
 # ─────────────────────────────────────────

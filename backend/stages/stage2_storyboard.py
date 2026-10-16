@@ -175,9 +175,14 @@ def generate_storyboard(
     Storyboard
         Structured visual plan with scenes and frame-by-frame directives.
     """
-    from stages.stage1_audio import determine_scene_count
+    from stages.stage1_audio import determine_scene_count, detect_unique_moments
 
     num_scenes = determine_scene_count(audio_data, max_frames=max_frames)
+
+    # ── Detect unique moments for keyframe placement ────────────────────────
+    unique_moments = detect_unique_moments(audio_data, num_scenes=num_scenes)
+    if unique_moments:
+        print(f"[Stage 2] Detected {len(unique_moments)} unique moments for keyframe placement")
 
     # ── CALL 1: Generate Character + Style Anchor ──────────────────────────
     # This is a small focused call (~200 tokens). It extracts a locked
@@ -223,7 +228,8 @@ def generate_storyboard(
         style_trigger_word=style_trigger_word,
         generation_mode=generation_mode,
         num_scenes=num_scenes,
-        max_frames=max_frames
+        max_frames=max_frames,
+        unique_moments=unique_moments,
     )
 
     print(f"[Stage 2] Generating storyboard for {num_scenes} scenes in {generation_mode} mode...")
@@ -268,6 +274,14 @@ def generate_storyboard(
             kf_count = sum(1 for s in storyboard.scenes for f in s.frames if f.type.value == "KEYFRAME")
             cont_count = total_frames - kf_count
             print(f"[Stage 2] Frames: {total_frames} total ({kf_count} keyframes, {cont_count} continuations)")
+
+            # ── Frame distribution enforcement ────────────────────────────────
+            # Ensure each scene has at least 3 frames (1 keyframe + 2-3 continuations)
+            # for a video-like feel (not a slideshow). If the LLM produced fewer,
+            # duplicate continuation frames around keyframes to fill the target.
+            if max_frames is not None and max_frames > 0:
+                from stages.stage2_storyboard import _enforce_frame_distribution
+                _enforce_frame_distribution(storyboard, max_frames, unique_moments, audio_data)
 
             # Warn if frame count exceeds the target
             if max_frames is not None and total_frames > max_frames:
@@ -440,6 +454,117 @@ def validate_storyboard(
             )
 
     return warnings
+
+
+def _enforce_frame_distribution(storyboard, max_frames: int, unique_moments: list = None, audio_data = None):
+    """
+    Ensures each scene has enough continuation frames for a video-like feel.
+
+    The LLM may not always produce 30 frames. If it produces fewer, we duplicate
+    continuation frames around keyframes (within ±0.3s) to reach the target.
+    This avoids slideshow pacing by ensuring each keyframe has 2-3 followers.
+
+    Keyframes timestamps snap to nearest unique moment when available.
+    """
+    from models.schemas import FrameDirective, FrameType
+
+    num_scenes = len(storyboard.scenes)
+    if num_scenes == 0:
+        return
+
+    target_per_scene = max_frames // num_scenes
+    if target_per_scene < 3:
+        target_per_scene = 3  # minimum 3 frames per scene (1 KF + 2 CONT)
+
+    total_frames = sum(len(s.frames) for s in storyboard.scenes)
+
+    # Snap keyframe timestamps to nearest unique moment
+    if unique_moments:
+        um_times = [m["timestamp"] for m in unique_moments]
+        for scene in storyboard.scenes:
+            if scene.frames and scene.frames[0].type == FrameType.KEYFRAME:
+                kf_ts = scene.frames[0].timestamp
+                nearest_um = min(um_times, key=lambda u: abs(u - kf_ts))
+                if abs(nearest_um - kf_ts) < 1.5:
+                    scene.frames[0].timestamp = nearest_um
+
+    # If we already have enough frames, just re-balance timestamps
+    if total_frames >= max_frames:
+        _rebalance_frame_timestamps(storyboard, audio_data)
+        return
+
+    # Duplicate continuation frames to reach the target
+    frames_to_add_per_scene = target_per_scene - 2  # 1 KF + 2 CONT minimum
+    next_frame_id = max(f.frame_id for s in storyboard.scenes for f in s.frames) + 1
+
+    for scene in storyboard.scenes:
+        if len(scene.frames) < 3:
+            # Need to add continuations after the keyframe
+            kf = scene.frames[0]
+            scene_end = scene.end_time
+            scene_duration = scene_end - scene.start_time
+            cont_timestamps = []
+
+            # Spread continuations evenly after the keyframe
+            for i in range(1, frames_to_add_per_scene + 1):
+                offset = (scene_duration / (frames_to_add_per_scene + 1)) * i
+                cont_timestamps.append(kf.timestamp + offset)
+
+            for ct in cont_timestamps:
+                if ct > scene_end:
+                    break
+                new_frame = FrameDirective(
+                    frame_id=next_frame_id,
+                    timestamp=ct,
+                    type=FrameType.CONTINUATION,
+                    hold_duration=None,
+                    modifier_prompt=kf.full_prompt or "character holds position, subtle expression shift",
+                    strength=0.35,
+                    what_changes="character holds position briefly",
+                )
+                scene.frames.append(new_frame)
+                next_frame_id += 1
+
+    # Rebalance timestamps to fit within scene boundaries
+    _rebalance_frame_timestamps(storyboard, audio_data)
+
+    new_total = sum(len(s.frames) for s in storyboard.scenes)
+    print(f"[Stage 2] Frame distribution enforced: {total_frames} → {new_total} frames (target: {max_frames})")
+
+
+def _rebalance_frame_timestamps(storyboard, audio_data = None):
+    """
+    Ensures frame timestamps are monotonically increasing within each scene
+    and span from scene.start_time to scene.end_time.
+    """
+    for scene in storyboard.scenes:
+        n_frames = len(scene.frames)
+        if n_frames == 0:
+            continue
+        if n_frames == 1:
+            scene.frames[0].timestamp = scene.start_time
+            continue
+
+        # Evenly distribute timestamps from start_time to end_time,
+        # but snap to beat-aligned times when possible
+        if audio_data and audio_data.beat_times:
+            for idx, frame in enumerate(scene.frames):
+                ideal_t = scene.start_time + (scene.end_time - scene.start_time) * idx / (n_frames - 1)
+                # Snap to nearest beat
+                nearest_beat = min(audio_data.beat_times, key=lambda b: abs(b - ideal_t))
+                if abs(nearest_beat - ideal_t) < 0.5:
+                    frame.timestamp = round(nearest_beat, 2)
+                else:
+                    frame.timestamp = round(ideal_t, 2)
+        else:
+            for idx, frame in enumerate(scene.frames):
+                if n_frames > 1:
+                    frame.timestamp = round(
+                        scene.start_time + (scene.end_time - scene.start_time) * idx / (n_frames - 1),
+                        2
+                    )
+                else:
+                    frame.timestamp = round(scene.start_time, 2)
 
 
 if __name__ == "__main__":

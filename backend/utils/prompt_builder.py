@@ -20,23 +20,30 @@ GENERATION MODE: FAST (text2img only)
 Since there is no img2img, YOU are responsible for visual consistency.
 The image model cannot see previous frames. YOU must describe them in text.
 
+VISUAL LANGUAGE CHEAT SHEET — use ONLY these concrete terms:
+- Camera angle: "low angle" (up at subject from below), "high angle" (down at subject from above), "eye level"
+- Shot distance: "wide shot" (full body + environment), "medium shot" (waist up), "close-up" (face fills frame), "extreme close-up"
+- Character orientation: "facing camera", "profile left", "three-quarter view", "over-the-shoulder"
+- Lighting: "single key light from upper left", "soft diffused light", "harsh rim light from behind"
+- Movement: "character turning left", "raising arm", "stepping forward", "blinking", "nodding head", "hand to heart"
+
 Rules for KEYFRAME prompts:
 - PROMPT ORDER — CRITICAL: Every full_prompt MUST follow this exact order:
-  1. ENVIRONMENT first (scene setting, location, atmosphere, 10-15 words)
-  2. LIGHTING (5 words): time of day, light quality
-  3. STYLE TOKENS (5 words): art style, medium
-  4. {{character_anchor}} token LAST
-- Describe setting, lighting, camera, pose in full detail
-- End with {{character_anchor}} (NOT {{style_anchor}} — that is redundant with style_trigger)
-- DO NOT begin full_prompt with hair, eyes, clothing, or any character physical description
-- Set visual_state: describe ALL visual elements that will persist through this scene's continuations
+  1. ENVIRONMENT first (where is the character, what surrounds them — 10-15 words)
+  2. LIGHTING (5-7 words): time of day, light quality, direction
+  3. STYLE TOKENS (3-5 words): art style, medium, quality
+  4. {{character_anchor}} token LAST (3-5 word identity tag, NOT full physical description)
+- Example full_prompt: "misty forest clearing at dawn, soft golden mist, cool morning light from above, painterly illustration, studio ghibli style, {{character_anchor}}"
+- DO NOT begin full_prompt with hair, eyes, clothing, or character physical description
+- Set visual_state: list ALL persistent elements (camera angle, shot distance, lighting, environment, character pose) for continuations
 
 Rules for CONTINUATION prompts:
-- Start with "same [element]" for EVERY persistent element from visual_state
-  Example: "same dark rain-slicked alley, same cold blue side lighting, same medium shot"
-- Then describe what changes in this frame
+- Repeat EVERY persistent element from visual_state with "same" prefix, then add what changes
+  Example: "same forest clearing, same soft golden mist, same medium shot, same character facing camera, character raising arm slowly, {{character_anchor}}"
+- Then describe ONLY what changes — be specific, not abstract
+  Good: "character blinks", "camera tilts up", "hand raises", "head turns left"
+  Bad: "dynamic motion", "energy shift", "dramatic change"
 - End with {{character_anchor}} last
-  Example: "same dark rain-slicked alley, rain intensifying, fists beginning to clench, {{character_anchor}}"
 - NO modifier_prompt field — only full_prompt
 - NO strength field — not applicable
 
@@ -45,9 +52,6 @@ The locked character anchor text is:
 
 The locked style anchor is:
 {style_anchor}
-
-Example CONTINUATION prompt:
-"same dark rain-slicked alley, same cold blue side lighting, same medium shot angle, rain intensifying around character, fists beginning to clench, {{character_anchor}}"
 """
 
 QUALITY_MODE_FRAME_INSTRUCTIONS = """
@@ -55,23 +59,33 @@ GENERATION MODE: QUALITY (img2img)
 
 img2img handles visual inheritance via pixels. Your job per frame is lightweight.
 
+VISUAL LANGUAGE CHEAT SHEET — use ONLY these concrete terms:
+- Camera angle: "low angle", "high angle", "eye level"
+- Shot distance: "wide shot", "medium shot", "close-up", "extreme close-up"
+- Character: "facing camera", "profile left", "three-quarter view", "over-the-shoulder"
+- Lighting: "single key light from upper left", "soft diffused light", "harsh rim light from behind"
+- Movement: "character turning left", "raising arm", "stepping forward", "blinking", "nodding head"
+
 Rules for KEYFRAME prompts:
 - PROMPT ORDER — CRITICAL: full_prompt MUST follow this exact order:
   1. ENVIRONMENT first (scene setting, location, atmosphere, 10-15 words)
-  2. LIGHTING (5 words): time of day, light quality
-  3. STYLE TOKENS (5 words): art style, medium
-  4. {{character_anchor}} token LAST (do not write character description inline —
+  2. LIGHTING (5-7 words): time of day, light quality, direction
+  3. STYLE TOKENS (3-5 words): art style, medium, quality
+  4. {{character_anchor}} token LAST (do not write character physical description —
     it is injected programmatically from the locked anchor)
-- DO NOT begin full_prompt with hair, eyes, clothing, or any character physical description
-- subject_pose, camera_angle, lighting as separate fields
+- DO NOT begin full_prompt with hair, eyes, clothing, or character physical description
+- subject_pose: concrete positioning like "standing, facing camera, weight on left leg"
+- camera_angle: "low angle" or "high angle" or "eye level"
+- lighting: "soft diffused light from above" or "harsh rim light from behind"
 - The keyframe is a fresh text_to_image — it establishes a brand-new scene
 
 Rules for CONTINUATION prompts:
-- modifier_prompt: SHORT description of ONLY what changes from the previous frame
-  (2-15 words — the model sees the previous frame's pixels, so don't re-describe everything)
+- modifier_prompt: ONLY describe the specific change (2-12 words)
+  Good: "character blinks slowly", "camera tilts up gently", "arm raises slightly", "head turns left"
+  Bad: "more dynamic", "intense motion", "energy shift"
 - strength: float 0.15–0.45
-  - 0.15–0.22: subtle (slight expression shift, lighting flicker)
-  - 0.22–0.35: moderate (body movement, partial scene change)
+  - 0.15–0.22: subtle (blink, lighting flicker, slight expression shift)
+  - 0.22–0.35: moderate (body movement, arm raise, head turn)
   - 0.35–0.45: strong (significant pose change, major lighting shift)
 - what_changes: human-readable description for logging
 - NO full_prompt on CONTINUATION frames
@@ -196,7 +210,8 @@ def build_storyboard_prompt(
     style_trigger_word: str,
     generation_mode: str,
     num_scenes: int,
-    max_frames: int = None
+    max_frames: int = None,
+    unique_moments: list = None,
 ) -> str:
     """
     Builds the full prompt sent to Groq for storyboard generation (Call 2).
@@ -229,6 +244,8 @@ def build_storyboard_prompt(
         frame_instructions = QUALITY_MODE_FRAME_INSTRUCTIONS
         json_schema = QUALITY_MODE_JSON_SCHEMA
 
+    unique_moments_text = _format_unique_moments(unique_moments) if unique_moments else ""
+
     return f"""
 You are creating a storyboard for a 30-second {style_name} music video.
 
@@ -257,16 +274,40 @@ Energy sections:
 Major onsets (drops/hits) at: {[round(t, 2) for t in audio_data.onset_times[:8]]}
 
 ══════════════════════════════════════════════
+UNIQUE MOMENTS (keyframe candidates — most distinctive audio points)
+══════════════════════════════════════════════
+These timestamps have the highest combined novelty score (timbral change +
+energy deviation + beat onset). Place your most visually dynamic scene at the
+highest-scoring moment. Each scene boundary should snap to a nearby unique moment.
+
+{unique_moments_text}
+
+══════════════════════════════════════════════
 AUDIO → VISUAL TRANSLATION RULES
 ══════════════════════════════════════════════
-Apply these rules when designing scenes and frames:
+Apply these rules when designing scenes and frames.
 
 {energy_hint}
 
-Camera rules by energy:
-- HIGH energy section → dynamic angles, diagonal compositions, ECU (extreme close-up) on face/hands
-- MEDIUM energy → medium shots, slight angles, balanced composition
-- LOW energy → wide establishing shots, static camera, centered composition, rule of thirds
+CAMERA & FRAMING — Use concrete, specific terms:
+- Camera angle: "low angle" (looking up at subject from below), "high angle" (looking down from above), "eye level" (viewer at subject height)
+- Shot distance: "wide shot" (full body + environment), "medium shot" (waist up), "close-up" (face fills frame), "extreme close-up" (single feature like eyes)
+- Character orientation: "facing camera", "profile left", "three-quarter view", "over-the-shoulder"
+- Movement: "character turning left", "raising arm", "stepping forward", "nodding head", "hand to heart"
+
+LIGHTING — Use specific descriptions:
+- "single key light from upper left" (one bright light source)
+- "soft diffused light" (even, shadowless, like overcast)
+- "harsh rim light from behind" (backlight creates outline)
+- "dappled sunlight through leaves" (patchy natural light)
+- "neon glow from right side" (colored artificial light)
+
+TRANSITION triggers:
+- Onset at HIGH energy → transition_from_previous = "glitch_cut"
+- Beat change without onset → transition_from_previous = "hard_cut"
+- Low energy scene change → transition_from_previous = "dissolve"
+- Major drop (loudest onset) → transition_from_previous = "flash_cut"
+- If character changes pose → describe the pose change in what_changes
 
 Color rules by mood:
 - intense_aggressive / dark_powerful → deep reds, blacks, harsh contrasts, single harsh light source
@@ -274,12 +315,6 @@ Color rules by mood:
 - melancholic_lonely / peaceful_dreamy → desaturated blues, purples, soft gradients, fog/mist
 - chaotic_anxious → mixed complementary colors, harsh shadows, broken light
 - neutral_cinematic → cool neutrals, single key light, film-style contrast
-
-Transition rules by audio event:
-- Onset at HIGH energy → transition_from_previous = "glitch_cut"
-- Beat change without onset → transition_from_previous = "hard_cut"
-- Low energy scene change → transition_from_previous = "dissolve"
-- Major drop (loudest onset) → transition_from_previous = "flash_cut"
 
 Lyric symbolism to encode visually:
 {lyric_symbols}
@@ -290,6 +325,16 @@ EMOTIONAL ARC (map scenes to this)
 {arc_hints}
 
 ══════════════════════════════════════════════
+FRAME DISTRIBUTION INSTRUCTIONS
+══════════════════════════════════════════════
+Distribute {max_frames if max_frames else 'all'} total frames across {num_scenes} scenes using this pattern:
+- First frame of each scene = KEYFRAME (fresh scene from scratch)
+- 2-4 CONTINUATION frames after each KEYFRAME (not 1 — enough for smooth motion)
+- CONTINUATION modifier_prompt describes ONLY the change: e.g. "character blinks", "camera tilts up", "rain intensifies", "arm raises slightly", "head turns left"
+- Keyframes should be at the unique moments listed above (snap the highest-energy scene to the most distinctive moment)
+
+========
+
 FRAME GENERATION INSTRUCTIONS ({generation_mode.upper()} MODE)
 ══════════════════════════════════════════════
 {frame_instructions}
@@ -306,8 +351,9 @@ STRUCTURE REQUIREMENTS
 ══════════════════════════════════════════════
 - Exactly {num_scenes} scenes
 - Approximately {frames_per_scene} frames per scene (target {max_frames if max_frames else 'unlimited'} total)
-- Each scene: 1 KEYFRAME at start, rest are CONTINUATIONS
-- Scene boundaries MUST align with onset timestamps or section boundaries
+- Each scene: 1 KEYFRAME at start, 2-4 CONTINUATIONS after it
+- Keyframe timestamps should snap to the nearest unique moment above
+- Scene boundaries MUST align with unique moments or onset timestamps
 - Generation mode in output: "{generation_mode}" (lowercase)
 - The "type" field for each frame MUST be exactly "KEYFRAME" or "CONTINUATION" (uppercase)
 - Do NOT include main_story, total_scenes, or scene fields as nested — they are top-level required fields
@@ -319,6 +365,19 @@ Return ONLY valid JSON. Do not include any text before or after the JSON.
 # ─────────────────────────────────────────────────────────────────────────
 # Helper functions
 # ─────────────────────────────────────────────────────────────────────────
+
+def _format_unique_moments(moments: list) -> str:
+    """Formats unique moments list as readable text for the LLM prompt."""
+    if not moments:
+        return "No unique moments detected."
+    lines = []
+    for m in moments:
+        lines.append(
+            f"  t={m['timestamp']:.2f}s | energy={m['energy']:.2f} | "
+            f"brightness={m['brightness']:.2f} | {m['description']}"
+        )
+    return "\n".join(lines)
+
 
 def derive_energy_visual_hint(audio_data: AudioAnalysisResult) -> str:
     """Translates RMS energy profile into visual direction text for the LLM."""
