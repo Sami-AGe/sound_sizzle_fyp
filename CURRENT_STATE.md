@@ -1,5 +1,5 @@
 # AUDIOSTORY — CURRENT_STATE.md
-# v28 (2026-10-16) — Frontend professionalism, audio fixes, slicer preview
+# v29 (2026-10-16) — Bug 15+16 fixes, Stage 3 verified, Tasks 1-5/A-F complete
 # v27 (2026-10-16) — Tasks A–F, D, E1, E2 complete. Keyframes use text_to_image. Prompt order fixed.
 # v26 (2026-10-14) — Visual quality diagnostic added from real user test
 # READ THIS FIRST. Only read HANDOFF.md for historical context.
