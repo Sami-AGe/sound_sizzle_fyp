@@ -66,6 +66,38 @@ def read_root():
     return {"service": "AudioStory", "version": "1.0.0", "status": "running"}
 
 
+@app.get("/health")
+def health_check():
+    """Health check endpoint for monitoring and load balancers."""
+    from stages.stage3_images import USE_COMFYUI
+    from comfyui_client import COMFYUI_HOST
+    from models.comfyui_registry import list_models
+    import socket
+
+    # Check ComfyUI connectivity
+    comfyui_reachable = False
+    try:
+        host = os.environ.get("COMFYUI_HOST", COMFYUI_HOST).replace("http://", "").replace("https://", "")
+        parts = host.split(":")
+        ip = parts[0]
+        port = int(parts[1]) if len(parts) > 1 else 8188
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(3)
+        sock.connect((ip, port))
+        sock.close()
+        comfyui_reachable = True
+    except Exception:
+        comfyui_reachable = False
+
+    return {
+        "status": "healthy",
+        "comfyui_reachable": comfyui_reachable,
+        "use_comfyui": USE_COMFYUI,
+        "active_jobs": len([j for j in get_job.__self__._jobs.values() if j.status in ("running", "pending")]) if hasattr(get_job, '__self__') else 0,
+        "models_registered": len(list_models()),
+    }
+
+
 @app.get("/styles")
 def get_styles():
     """Lists all available visual styles with their display names and descriptions."""

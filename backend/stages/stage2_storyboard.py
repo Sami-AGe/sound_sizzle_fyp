@@ -287,7 +287,6 @@ def generate_storyboard(
             # for a video-like feel (not a slideshow). If the LLM produced fewer,
             # duplicate continuation frames around keyframes to fill the target.
             if max_frames is not None and max_frames > 0:
-                from stages.stage2_storyboard import _enforce_frame_distribution
                 _enforce_frame_distribution(storyboard, max_frames, unique_moments, audio_data)
 
             # Warn if frame count exceeds the target
@@ -468,21 +467,55 @@ def _enforce_frame_distribution(storyboard, max_frames: int, unique_moments: lis
     Ensures each scene has enough continuation frames for a video-like feel.
 
     The LLM may not always produce 30 frames. If it produces fewer, we duplicate
-    continuation frames around keyframes (within ±0.3s) to reach the target.
+    continuation frames around keyframes (within the scene) to reach the target.
     This avoids slideshow pacing by ensuring each keyframe has 2-3 followers.
 
     Keyframes timestamps snap to nearest unique moment when available.
+
+    Edge cases handled:
+    - Scenes with 0 frames (empty scenes from LLM errors): create a fallback keyframe
+    - Scenes with only 1 frame (keyframe only, no continuations): add continuations
+    - max_frames=0 or negative: no-op, leave storyboard as-is
     """
     from models.schemas import FrameDirective, FrameType
 
     num_scenes = len(storyboard.scenes)
-    if num_scenes == 0:
+    if num_scenes == 0 or max_frames is None or max_frames <= 0:
         return
 
     target_per_scene = max_frames // num_scenes
     if target_per_scene < 3:
         target_per_scene = 3  # minimum 3 frames per scene (1 KF + 2 CONT)
 
+    total_frames = sum(len(s.frames) for s in storyboard.scenes)
+
+    # ── Handle empty scenes: create a fallback keyframe ───────────────────
+    # If the LLM returned a scene with no frames, synthesize a minimal keyframe
+    # so downstream stages don't crash on empty frame lists.
+    next_frame_id = max(
+        (f.frame_id for s in storyboard.scenes for f in s.frames),
+        default=0
+    ) + 1
+
+    for scene in storyboard.scenes:
+        if not scene.frames:
+            log_msg = (f"[Stage 2] WARNING: Scene {scene.scene_id} has 0 frames — "
+                       f"creating fallback keyframe")
+            print(log_msg)
+            fallback = FrameDirective(
+                frame_id=next_frame_id,
+                timestamp=scene.start_time,
+                type=FrameType.KEYFRAME,
+                full_prompt=f"scene at {scene.setting}, {scene.mood}, illustration, {{character_anchor}}",
+                subject_pose="standing, facing camera",
+                camera_angle="medium shot",
+                lighting="soft diffused light",
+                what_changes="fallback keyframe",
+            )
+            scene.frames.append(fallback)
+            next_frame_id += 1
+
+    # Recompute total after fallback creation
     total_frames = sum(len(s.frames) for s in storyboard.scenes)
 
     # Snap keyframe timestamps to nearest unique moment
@@ -495,37 +528,28 @@ def _enforce_frame_distribution(storyboard, max_frames: int, unique_moments: lis
                 if abs(nearest_um - kf_ts) < 1.5:
                     scene.frames[0].timestamp = nearest_um
 
-    # If we already have enough frames, just re-balance timestamps
+    # ── If we have enough frames, rebalance timestamps and return ─────────
     if total_frames >= max_frames:
         _rebalance_frame_timestamps(storyboard, audio_data)
         return
 
+    # ── Pad scenes up to target_per_scene ──────────────────────────────────
     # Add continuation frames to bring each scene up to target_per_scene.
-    # The LLM may produce fewer frames than requested; this guarantees
-    # each scene reaches the target so the final frame count matches max_frames.
-    next_frame_id = max(f.frame_id for s in storyboard.scenes for f in s.frames) + 1
-
     for scene in storyboard.scenes:
         frames_needed = target_per_scene - len(scene.frames)
         if frames_needed <= 0:
             continue  # Scene already has enough frames
 
-        # Duplicate the keyframe as the basis for continuation frames.
-        kf = scene.frames[0]
+        kf = scene.frames[0]  # keyframe (guaranteed to exist after fallback logic)
         scene_end = scene.end_time
-
-        # Determine keyframe timestamp (snap to unique moment if available)
         kf_ts = kf.timestamp
 
-        # Spread continuation timestamps evenly between keyframe and scene end
         for i in range(1, frames_needed + 1):
-            # Evenly distribute from just after keyframe to scene end
             fractional = i / (frames_needed + 1)
             ct = kf_ts + fractional * (scene_end - kf_ts)
             if ct > scene_end:
-                ct = scene_end - 0.01 * i  # nudge back inside bounds
+                ct = scene_end - 0.01 * i
 
-            # Base the continuation on the keyframe's content for consistency
             base_prompt = kf.full_prompt or kf.modifier_prompt or "character in scene, subtle motion"
 
             new_frame = FrameDirective(
@@ -540,7 +564,6 @@ def _enforce_frame_distribution(storyboard, max_frames: int, unique_moments: lis
             scene.frames.append(new_frame)
             next_frame_id += 1
 
-    # Rebalance timestamps to fit within scene boundaries
     _rebalance_frame_timestamps(storyboard, audio_data)
 
     new_total = sum(len(s.frames) for s in storyboard.scenes)
