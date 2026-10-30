@@ -13,6 +13,16 @@ import numpy as np
 import librosa
 import whisper
 
+# Load .env from project root so module-level env vars are available
+# when running this stage directly (e.g. `python -m stages.stage1_audio`)
+for _candidate in [os.path.join(os.getcwd(), ".env"),
+                   os.path.join(os.getcwd(), "..", ".env"),
+                   "../.env"]:
+    if os.path.exists(_candidate):
+        from dotenv import load_dotenv
+        load_dotenv(_candidate)
+        break
+
 from groq import Groq
 from models.schemas import AudioAnalysisResult
 from utils.audio_utils import get_brightness_at_time
@@ -294,30 +304,36 @@ def determine_scene_count(
 ) -> int:
     """
     Determines how many distinct scenes the storyboard should have
-    based on energy sections and overall tempo.
-    A 30-second video should have 3-5 scenes.
+    based on energy sections, tempo, and audio duration.
+    Task G: 30-second audio should have 6-8 scenes (1 keyframe every 3-5 seconds).
 
     If max_frames is provided, scene count is capped so that the LLM
-    can distribute the target frame count across scenes.
+    can distribute the target frame count across scenes with at least
+    3 frames per scene (1 keyframe + 2-3 continuations) for video-like pacing.
     """
+    # Base scene count from energy section analysis
     high_energy_sections = [
         s for s in audio_data.energy_sections if s["energy_label"] == "high"
     ]
     if len(high_energy_sections) >= 3:
-        scene_count = 5
+        base_scenes = 5
     elif len(high_energy_sections) >= 2:
-        scene_count = 4
+        base_scenes = 4
     else:
-        scene_count = 3
+        base_scenes = 3
 
-    # If a target frame count is specified, cap scenes to ensure enough
-    # frames per scene for a plausible storyboard. Each scene needs at least
-    # 1 keyframe + 1 continuation = 2 minimum frames.
+    # Task G: Target 1 keyframe every 3-5 seconds of audio duration
+    # For 30s audio: 6-8 scenes. Scale proportionally for other durations.
+    duration_based = max(3, round(audio_data.duration / 4.0))  # ~1 scene per 4s
+    scene_count = max(base_scenes, duration_based)
+
+    # For a 30-second video: aim for 6-8 scenes
+    if audio_data.duration >= 25:
+        scene_count = max(scene_count, 6)
+
+    # If max_frames is specified, cap scenes to ensure at least 3 frames per scene
     if max_frames is not None and max_frames > 0:
-        # Reserve 1 frame per scene for the keyframe; the rest are continuations
-        # Ensure at least 2 frames per scene (1 KF + 1 CONT) unless max_frames
-        # is extremely low (then allow 1 frame/scene = all keyframes)
-        min_frames_per_scene = 2 if max_frames >= scene_count * 2 else 1
+        min_frames_per_scene = 3  # 1 keyframe + 2-3 continuations for video pacing
         max_scenes = max_frames // min_frames_per_scene
         scene_count = min(scene_count, max_scenes)
         # Guarantee at least 1 scene

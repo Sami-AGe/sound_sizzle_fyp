@@ -28,7 +28,7 @@ with open(audio_path) as f:
 
 print(f"Audio loaded: {audio_data.duration}s, mood={audio_data.detected_mood}")
 
-style = get_style("cyberpunk")
+style = get_style("cyberpunk_anime")
 print(f"Style: {style['display_name']}")
 
 generation_mode = os.environ.get("GENERATION_MODE", "fast")

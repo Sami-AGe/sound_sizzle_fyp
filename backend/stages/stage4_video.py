@@ -95,6 +95,7 @@ def build_video(
     effects_log = set()
     running_start = 0.0  # accumulated start time for beat-aligned transitions
     last_valid_image = None  # track last non-placeholder frame for substitution
+    previous_scene_last_frame = None  # Task H: for dissolve crossfade between scenes
 
     total_frames = len(frame_set.frames)
     print(f"[Stage 4] Building video from {total_frames} frames at {TARGET_FPS}fps...")
@@ -149,11 +150,33 @@ def build_video(
         is_onset = is_near_onset(audio_data.onset_times, frame.timestamp)
         is_first_of_scene = (i == 0 or frame_set.frames[i - 1].scene_id != frame.scene_id)
 
+        # ── Task H: Storyboard-driven scene transition ───────────────────────
+        # When entering a new scene, apply the transition type declared by Stage 2
+        # instead of a generic flash/glitch. The previous scene's last rendered
+        # frame is kept for dissolves.
+        scene_transition = None
+        if is_first_of_scene and frame.transition_from_previous:
+            scene_transition = frame.transition_from_previous
+
+        if scene_transition and scene_transition in ("glitch_cut", "hard_cut", "dissolve", "flash_cut"):
+            effects_log.add(f"scene_transition:{scene_transition}")
+            log_progress(job_id,
+                f"[Stage 4] Frame {frame.frame_id}: scene transition = {scene_transition}", "info")
+
         frame_images = []
 
         for f_idx in range(num_frames):
             t = f_idx / TARGET_FPS
             current_frame = raw_image.copy()
+
+            # ── Task H: Apply scene transition on first sub-frame ────────────
+            # Only on the very first rendered frame of a new scene, and only for
+            # the first scene we skip (no predecessor to transition from).
+            if f_idx == 0 and scene_transition and previous_scene_last_frame is not None:
+                current_frame = apply_scene_transition(
+                    current_frame, previous_scene_last_frame, scene_transition,
+                    progress=0.0,  # instantaneous at scene start
+                )
 
             # ── Effect 1: Ken Burns (always active) ─────────────────────────
             current_frame = apply_ken_burns(current_frame, t, duration, energy)
@@ -187,6 +210,11 @@ def build_video(
 
             # Convert BGR → RGB for moviepy
             frame_images.append(cv2.cvtColor(current_frame, cv2.COLOR_BGR2RGB))
+
+        # Task H: Track the last rendered frame for dissolve transitions.
+        # Always updated so that when the next scene starts, it holds the
+        # previous scene's final frame.
+        previous_scene_last_frame = raw_image.copy()
 
         # Create clip from this frame's rendered images (moviepy v2 API)
         clip = ImageSequenceClip(frame_images, fps=TARGET_FPS)
@@ -238,6 +266,70 @@ def build_video(
 # ═══════════════════════════════════════════════════════
 # EFFECTS LIBRARY
 # ═══════════════════════════════════════════════════════
+
+def apply_scene_transition(current_frame, prev_frame, transition_type: str,
+                           progress: float = 0.0, duration: float = 1.0):
+    """
+    Applies a storyboard-driven scene transition at a scene boundary.
+
+    Parameters
+    ----------
+    current_frame : np.ndarray
+        The first keyframe image of the NEW scene (BGR).
+    prev_frame : np.ndarray
+        The last rendered frame of the PREVIOUS scene (BGR).
+    transition_type : str
+        One of "glitch_cut", "hard_cut", "dissolve", "flash_cut".
+    progress : float
+        0.0 = just entering new scene, 1.0 = fully transitioned.
+    duration : float
+        Total duration of the transition in seconds (for animated transitions).
+
+    Returns
+    -------
+    np.ndarray
+        The blended/interpolated frame.
+    """
+    # Ensure both images are the same shape for blending
+    if prev_frame.shape != current_frame.shape:
+        prev_frame = cv2.resize(prev_frame, (current_frame.shape[1], current_frame.shape[0]))
+
+    if transition_type == "hard_cut":
+        # Instant switch — no blending. progress 0 → prev, >0 → current.
+        if progress < 0.5:
+            return prev_frame.copy()
+        else:
+            return current_frame.copy()
+
+    elif transition_type == "dissolve":
+        # Linear crossfade between previous scene's last frame and new scene's keyframe
+        alpha = np.clip(progress, 0.0, 1.0)
+        return cv2.addWeighted(prev_frame, 1.0 - alpha, current_frame, alpha, 0)
+
+    elif transition_type == "glitch_cut":
+        # Stronger glitch at the boundary: chromatic aberration + slice displacement
+        # blended with a hard cut. The glitch is most intense at progress=0.
+        if progress < 0.3:
+            # Blend a quick glitch burst over the cut
+            glitched = apply_glitch(current_frame, intensity=0.9)  # max intensity
+            # Fade glitch out quickly
+            glitch_alpha = 1.0 - (progress / 0.3)
+            return cv2.addWeighted(glitched, glitch_alpha, current_frame, 1.0 - glitch_alpha, 0)
+        else:
+            return current_frame.copy()
+
+    elif transition_type == "flash_cut":
+        # White flash synchronized to onset: full opacity flash then settle
+        if progress < 0.25:
+            flash_strength = 1.0 - (progress / 0.25)  # 1.0 → 0.0 over 0.25s
+            return apply_flash(current_frame, flash_strength)
+        else:
+            return current_frame.copy()
+
+    else:
+        # Unknown transition — fall back to hard cut
+        return current_frame.copy()
+
 
 def apply_ken_burns(image, t, duration, energy):
     """

@@ -83,10 +83,14 @@ Rules for CONTINUATION prompts:
 - modifier_prompt: ONLY describe the specific change (2-12 words)
   Good: "character blinks slowly", "camera tilts up gently", "arm raises slightly", "head turns left"
   Bad: "more dynamic", "intense motion", "energy shift"
-- strength: float 0.15–0.45
-  - 0.15–0.22: subtle (blink, lighting flicker, slight expression shift)
-  - 0.22–0.35: moderate (body movement, arm raise, head turn)
-  - 0.35–0.45: strong (significant pose change, major lighting shift)
+CONTINUATION FRAME STRENGTH RULES — CRITICAL:
+Strength controls how much the image changes. Values below 0.50 are INVISIBLE in video.
+
+  - Subtle motion (blink, breath, hair sway, light flicker): strength 0.50–0.60
+  - Moderate motion (arm raise, head turn, camera pan, lighting shift): strength 0.65–0.75
+  - Strong motion (body rotation, zoom, dramatic scene element change): strength 0.75–0.88
+  - NEVER generate strength below 0.50 — values of 0.17–0.35 produce invisible changes
+  - Each frame holds for ~1 second in the video — motion must be clearly visible at that pace
 - what_changes: human-readable description for logging
 - NO full_prompt on CONTINUATION frames
 """
@@ -100,7 +104,7 @@ FAST_MODE_JSON_SCHEMA = '''
 {
   "generation_mode": "fast",
   "main_story": "2-3 sentence overall narrative summary",
-  "total_scenes": "INTEGER (must match the number of scenes in the array below)",
+  "total_scenes": 6,
   "character_anchor": {
     "hair": "...",
     "eyes": "...",
@@ -108,7 +112,7 @@ FAST_MODE_JSON_SCHEMA = '''
     "body": "...",
     "distinguishing": "...",
     "full_anchor_text": "...",
-    "short_anchor_text": "3-5 word identity tag, e.g. 'green-haired hero, energy powers'",
+    "short_anchor_text": "8-12 word description with exact colors, e.g. 'teal bob hair, amber eyes, black trench coat, pink circuit patterns'",
     "style_anchor": "...",
     "reference_prompt": "..."
   },
@@ -159,7 +163,7 @@ QUALITY_MODE_JSON_SCHEMA = '''
 {
   "generation_mode": "quality",
   "main_story": "2-3 sentence overall narrative summary",
-  "total_scenes": "INTEGER (must equal num scenes below)",
+  "total_scenes": 6,
   "subject_description": "overall character description",
   "subject_reference_prompt": "full prompt for generating a neutral standing pose reference image",
   "scenes": [
@@ -188,7 +192,7 @@ QUALITY_MODE_JSON_SCHEMA = '''
           "timestamp": 0.5,
           "type": "CONTINUATION",
           "modifier_prompt": "SHORT description of ONLY what changes",
-          "strength": 0.22,
+          "strength": 0.65,
           "what_changes": "what changed"
         }
       ]
@@ -224,7 +228,8 @@ def build_storyboard_prompt(
         audio_data.onset_times
     )
 
-    beat_info = _format_beats(significant_beats[:30])
+    # Limit beats to reduce prompt size (avoid TPM limits)
+    beat_info = _format_beats(significant_beats[:15])
     energy_sections = _format_energy_sections(audio_data.energy_sections)
 
     # ── Visual direction derived from audio features ─────────────────────
@@ -266,7 +271,7 @@ Duration: {audio_data.duration:.1f}s
 Tempo: {audio_data.tempo:.1f} BPM
 Overall mood: {audio_data.detected_mood}
 Tonal brightness: {"bright and energetic" if audio_data.spectral_centroid_mean > 0.5 else "dark and heavy"}
-Lyrics: {(audio_data.transcript or "instrumental — no lyrics")[:300]}
+Lyrics: {(audio_data.transcript or "instrumental")[:100]}
 
 Energy sections:
 {energy_sections}
@@ -327,6 +332,15 @@ EMOTIONAL ARC (map scenes to this)
 ══════════════════════════════════════════════
 FRAME DISTRIBUTION INSTRUCTIONS
 ══════════════════════════════════════════════
+SCENE PACING RULES — CRITICAL:
+- Target: 1 new scene (keyframe) every 3–5 seconds of audio
+- For 30 seconds of audio: generate 6–8 scenes (NOT 3 scenes)
+- Each scene: 1 KEYFRAME + 2–4 CONTINUATION frames (3–5 frames total per scene)
+- More scenes with fewer frames = dynamic video that feels like a real edit
+- Fewer scenes with many frames = slideshow that feels static and boring
+- With 30 total frames across 6 scenes: ~5 frames per scene (1 keyframe + 4 continuations)
+- With 30 total frames across 8 scenes: ~4 frames per scene (1 keyframe + 3 continuations)
+
 Distribute {max_frames if max_frames else 'all'} total frames across {num_scenes} scenes using this pattern:
 - First frame of each scene = KEYFRAME (fresh scene from scratch)
 - 2-4 CONTINUATION frames after each KEYFRAME (not 1 — enough for smooth motion)

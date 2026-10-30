@@ -249,7 +249,10 @@ def generate_all_frames_fast(
                     hold_duration=frame_directive.hold_duration,
                     scene_id=scene.scene_id,
                     prompt_used=resolved_prompt,
-                    strength_used=None   # N/A for Fast mode
+                    strength_used=None,   # N/A for Fast mode
+                    transition_from_previous=(scene.transition_from_previous
+                                              if frame_directive.type == FrameType.KEYFRAME
+                                              else None),
                 ))
 
                 log_progress(progress_job_id,
@@ -271,7 +274,10 @@ def generate_all_frames_fast(
                     hold_duration=frame_directive.hold_duration,
                     scene_id=scene.scene_id,
                     prompt_used=resolved_prompt,
-                    strength_used=None
+                    strength_used=None,
+                    transition_from_previous=(scene.transition_from_previous
+                                              if frame_directive.type == FrameType.KEYFRAME
+                                              else None),
                 ))
 
             frame_delay = float(os.environ.get("FRAME_DELAY", str(FRAME_DELAY)))
@@ -283,7 +289,7 @@ def generate_all_frames_fast(
 
     return GeneratedFrameSet(
         job_id=job_id,
-        style_name=storyboard.style_anchor or "unknown",
+        style_name=style_name,
         reference_image_path=None,   # Fast mode has no separate reference image
         frames=generated_frames,
         total_frames=len(generated_frames),
@@ -511,7 +517,10 @@ def generate_all_frames_quality(
                 strength_used=(denoise_override if denoise_override is not None
                                else (0.82 if frame_directive.type == FrameType.KEYFRAME
                                      else (denoise_continuation if denoise_continuation is not None
-                                           else (frame_directive.strength or 0.45))))
+                                           else (frame_directive.strength or 0.45)))),
+                transition_from_previous=(scene.transition_from_previous
+                                          if frame_directive.type == FrameType.KEYFRAME
+                                          else None),
             ))
 
             # Rate limit / thermal management pause between frames

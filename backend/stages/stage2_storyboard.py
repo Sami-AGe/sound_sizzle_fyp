@@ -16,6 +16,16 @@ import re
 import os
 import time
 
+# Load .env from project root so module-level env vars are available
+# when running this stage directly (e.g. `python -m stages.stage2_storyboard`)
+for _candidate in [os.path.join(os.getcwd(), ".env"),
+                   os.path.join(os.getcwd(), "..", ".env"),
+                   "../.env"]:
+    if os.path.exists(_candidate):
+        from dotenv import load_dotenv
+        load_dotenv(_candidate)
+        break
+
 from groq import Groq
 from models.schemas import AudioAnalysisResult, Storyboard, CharacterAnchor
 from utils.prompt_builder import build_storyboard_prompt
@@ -68,7 +78,7 @@ Generate a character for this video. Return ONLY this JSON (keep all field value
   "clothing": "specific clothing with color and detail",
   "body": "body type and build",
   "distinguishing": "one unique visual trait (energy aura, weapon, accessory, etc.)",
-  "short_anchor_text": "3-5 word identity tag, e.g. 'green-haired hero, energy powers'"
+  "short_anchor_text": "8-12 word description with exact colors, e.g. 'teal bob hair, amber eyes, black trench coat, pink circuit patterns'"
 }}
 """
     for attempt in range(max_retries):
@@ -80,10 +90,14 @@ Generate a character for this video. Return ONLY this JSON (keep all field value
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
-                max_tokens=512
+                max_tokens=512,
             )
 
-            raw = strip_json_fences(response.choices[0].message.content.strip())
+            raw = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
+            if not raw:
+                raise json.JSONDecodeError("Empty response from LLM", "", 0)
+
+            raw = strip_json_fences(raw)
             try:
                 anchor = json.loads(raw)
             except json.JSONDecodeError:
@@ -251,7 +265,7 @@ def generate_storyboard(
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.75,
-                max_tokens=5500  # Groq free-tier 8000 TPM limit (prompt ~2300 + 5500 = ~7800, safe margin)
+                max_tokens=5500,  # Groq free-tier 8000 TPM limit (prompt ~2300 + 5500 = ~7800, safe margin)
             )
 
             raw_json = response.choices[0].message.content.strip()
@@ -558,7 +572,7 @@ def _enforce_frame_distribution(storyboard, max_frames: int, unique_moments: lis
                 type=FrameType.CONTINUATION,
                 hold_duration=None,
                 modifier_prompt=base_prompt,
-                strength=0.35,
+                strength=0.65,
                 what_changes="continuation of keyframe composition",
             )
             scene.frames.append(new_frame)

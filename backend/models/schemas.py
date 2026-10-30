@@ -132,6 +132,7 @@ class GeneratedFrame(BaseModel):
     scene_id: int
     prompt_used: str
     strength_used: Optional[float] = None
+    transition_from_previous: Optional[str] = None  # Task H: carried from Scene for scene-boundary effects
 
 class GeneratedFrameSet(BaseModel):
     job_id: str
