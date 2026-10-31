@@ -1,10 +1,10 @@
 """
 AudioStory — Stage 2: Storyboard Generation
 
-Sends the audio analysis result to Groq's LLM and receives a structured
+Sends the audio analysis result to Gemini 2.0 Flash and receives a structured
 JSON storyboard that dictates the full visual plan for the video.
 
-v2 dual-mode: Two sequential Groq calls.
+v2 dual-mode: Two sequential Gemini calls.
   Call 1 — generate_character_anchor: locked character + style descriptor
   Call 2 — generate_storyboard: full scene + frame plan, mode-aware
 
@@ -26,17 +26,17 @@ for _candidate in [os.path.join(os.getcwd(), ".env"),
         load_dotenv(_candidate)
         break
 
-from groq import Groq
+import google.generativeai as genai
 from models.schemas import AudioAnalysisResult, Storyboard, CharacterAnchor
 from utils.prompt_builder import build_storyboard_prompt
 
 
-# Initialize Groq client (API key from .env)
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-client = Groq(api_key=GROQ_API_KEY)
+# Initialize Gemini client (API key from .env)
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY", ""))
 
-# Recommended Groq model for structured JSON output
-STORYBOARD_MODEL = "openai/gpt-oss-120b"
+# Recommended Gemini model for structured JSON output
+STORYBOARD_MODEL = "gemini-3.8-flash"
+model = genai.GenerativeModel(STORYBOARD_MODEL)
 
 # Default system prompt
 SYSTEM_PROMPT = (
@@ -54,7 +54,7 @@ def generate_character_anchor(
     max_retries: int = 3
 ) -> dict:
     """
-    Call 1: Dedicated Groq call that generates the locked character + style anchor.
+    Call 1: Dedicated Gemini call that generates the locked character + style anchor.
     Short, focused, fast. Result is frozen for the entire pipeline run.
 
     Returns a dict with: hair, eyes, clothing, body, distinguishing,
@@ -83,17 +83,16 @@ Generate a character for this video. Return ONLY this JSON (keep all field value
 """
     for attempt in range(max_retries):
         try:
-            response = client.chat.completions.create(
-                model=STORYBOARD_MODEL,
-                messages=[
-                    {"role": "system", "content": "Return only valid JSON. No explanation. No markdown."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=512,
+            response = model.generate_content(
+                f"Return only valid JSON. No explanation. No markdown.\n\n{prompt}",
+                generation_config=genai.GenerationConfig(
+                    temperature=0.7,
+                    max_output_tokens=512,
+                    response_mime_type="application/json",
+                )
             )
 
-            raw = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
+            raw = response.text.strip()
             if not raw:
                 raise json.JSONDecodeError("Empty response from LLM", "", 0)
 
@@ -157,12 +156,12 @@ def generate_storyboard(
     detected_mood: str = "neutral"
 ) -> Storyboard:
     """
-    Main entry point: sends audio analysis to Groq and returns a
+    Main entry point: sends audio analysis to Gemini and returns a
     structured Storyboard.
 
     v2 dual-mode: Two sequential calls:
       1. generate_character_anchor() — locked anchor
-      2. Groq main call — full storyboard, mode-aware
+      2. Gemini main call — full storyboard, mode-aware
 
     Parameters
     ----------
@@ -175,7 +174,7 @@ def generate_storyboard(
     style_trigger_word : str, optional
         Additional trigger words to append to the prompt for style guidance.
     max_retries : int
-        Number of times to retry if Groq returns malformed JSON.
+        Number of times to retry if Gemini returns malformed JSON.
     save_path : str, optional
         If provided, saves the storyboard JSON to this path.
     max_frames : int, optional
@@ -215,7 +214,7 @@ def generate_storyboard(
     if anchor is None or not anchor.get("short_anchor_text"):
         raise ValueError(
             "Character anchor generation failed — storyboard aborted. "
-            "Check Groq API key and TPM limits."
+            "Check Gemini API key."
         )
 
     # ── CALL 2: Generate Full Scene + Frame Plan ───────────────────────────
@@ -254,21 +253,20 @@ def generate_storyboard(
     )
 
     print(f"[Stage 2] Generating storyboard for {num_scenes} scenes in {generation_mode} mode...")
-    print(f"[Stage 2] Sending to Groq model: {STORYBOARD_MODEL}")
+    print(f"[Stage 2] Sending to Gemini model: {STORYBOARD_MODEL}")
 
     for attempt in range(max_retries):
         try:
-            response = client.chat.completions.create(
-                model=STORYBOARD_MODEL,
-                messages=[
-                    {"role": "system", "content": enhanced_system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.75,
-                max_tokens=5500,  # Groq free-tier 8000 TPM limit (prompt ~2300 + 5500 = ~7800, safe margin)
+            response = model.generate_content(
+                f"{enhanced_system_prompt}\n\n{prompt}",
+                generation_config=genai.GenerationConfig(
+                    temperature=0.75,
+                    max_output_tokens=8192,
+                    response_mime_type="application/json",
+                )
             )
 
-            raw_json = response.choices[0].message.content.strip()
+            raw_json = response.text.strip()
             raw_json = strip_json_fences(raw_json)
 
             storyboard = parse_storyboard_json(raw_json)
@@ -345,7 +343,7 @@ def generate_storyboard(
 
 def parse_storyboard_json(raw_json: str) -> Storyboard:
     """
-    Parses the JSON string from Groq into a Storyboard object.
+    Parses the JSON string from Gemini into a Storyboard object.
     Handles common formatting issues.
     """
     try:
