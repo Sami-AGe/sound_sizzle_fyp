@@ -1,4 +1,7 @@
 # AUDIOSTORY — CURRENT_STATE.md
+# v36 (2026-11-21) — README.md complete overhaul reflecting current architecture
+# v35 (2026-11-02) — Bug 18 fix: ComfyUI 400 Bad Request (HF model IDs ignored in model param)
+# v34 (2026-10-31) — Model swap to gemini-3.5-flash-lite; doc cleanup; e2e pipeline test passed
 # v33 (2026-10-16) — Task I plan added (Groq→Gemini 2.0 Flash migration); Bug 17 (TPM partial fix); 250-line cap removed
 # v32 (2026-10-16) — Task G: Continuation strength + scene pacing fix; user test findings
 # v31 (2026-10-16) — Precedence-based unique moment clustering, frame distribution fix, startup diagnostics
@@ -165,6 +168,28 @@ This is a low-priority follow-up for future work.
 
 ---
 
+## ✨ v36 (2026-11-21) — README.md Complete Overhaul
+
+**What was done:**
+- Completely rewrote README.md to reflect current project architecture (v36)
+- Documents all 4 stages with tech stack table
+- Dual-mode generation comparison (Fast vs Quality)
+- Visual styles table with trigger words, LoRA files, descriptions
+- Complete project structure tree
+- All API endpoints with request/response formats
+- Environment variables with explanations
+- Key features: character consistency, beat-synced effects, storyboard-driven transitions, smart scene pacing, unique moment keyframe placement
+- CLI, API, and Frontend usage examples
+- Development setup commands
+- Requirements list
+- Important notes table (frame delay, max frames, continuation strength, character anchor, ComfyUI model param, Gemini model, deprecated SDK)
+- Task status table matching CURRENT_STATE.md
+
+**Files touched:**
+- `README.md` — complete rewrite
+
+---
+
 ## ✨ v31 — What Was Done (Summary)
 
 Three fixes applied:
@@ -214,6 +239,7 @@ Three fixes applied:
 | Bug 15 | Stage 4 `progress_job_id` NameError — replaced with `job_id` |
 | Bug 16 | `COMFYUI_MODEL` default typo `meinmix_v12Final` → `meinamix_v12Final.safetensors` |
 | Bug 17 | TPM partial fix: `significant_beats[:30]` → `[:15]` and lyrics `[:300]` → `[:100]` in `prompt_builder.py` — reduces prompt size by ~400 tokens but does NOT fully solve 413 errors; Task I (Gemini) is the real fix |
+| Bug 18 | **ComfyUI 400 Bad Request on text_to_image**: `stage3_images.py` passed HuggingFace model IDs (`stabilityai/stable-diffusion-3-medium`, `black-forest-labs/FLUX.1-Kontext-dev`) as `model` param to `ComfyUIClient.text_to_image()`. The recent commit (fd9ddb2) made `model` take precedence over `ckpt_name`, causing ComfyUI to receive invalid checkpoint names. Fixed in `comfyui_client.py`: `model` param now ignored if it contains "/" (HuggingFace model ID format), falling back to `ckpt_name` kwarg or `COMFYUI_MODEL` env var. |
 
 ---
 
